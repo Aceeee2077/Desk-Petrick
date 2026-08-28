@@ -1,11 +1,62 @@
 /* ============================================================================
-   Petric settings panel styles — dark translucent frosted glass + rounded cards + switches/sliders
+   Petric settings panel styles — themeable via CSS variables.
+   Dark theme (default) = original frosted purple glass;
+   Light theme ([data-theme="light"]) = orange-white gradient.
    ============================================================================ */
 
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+/* ---------- Theme tokens ---------- */
+:root {
+  --panel-bg: linear-gradient(160deg, rgba(40, 34, 60, 0.94), rgba(28, 24, 44, 0.94));
+  --panel-border: rgba(255, 255, 255, 0.12);
+  --text: #ece7f7;
+  --text-soft: #e6e0f5;
+  --text-dim: #9a8fc4;
+  --accent: #a78bfa;
+  --accent-text: #fff;
+  --input-bg: rgba(255, 255, 255, 0.08);
+  --input-border: rgba(255, 255, 255, 0.14);
+  --input-text: #fff;
+  --hover-bg: rgba(255, 255, 255, 0.16);
+  --seg-bg: rgba(255, 255, 255, 0.08);
+  --seg-text: #d9d2ef;
+  --switch-bg: rgba(255, 255, 255, 0.16);
+  --status-ok: #9ef0c0;
+  --status-err: #f7a8b8;
+  --h2: #c8bdf0;
+  --tag-bg: rgba(167, 139, 250, 0.25);
+  --tag-text: #c9b8ff;
+  --btn-close: #b9aee0;
+  --scroll-thumb: rgba(255, 255, 255, 0.18);
+}
+
+:root[data-theme='light'] {
+  --panel-bg: linear-gradient(160deg, rgba(255, 250, 244, 0.97), rgba(255, 236, 219, 0.97));
+  --panel-border: rgba(249, 115, 22, 0.28);
+  --text: #4a2c14;
+  --text-soft: #6b4220;
+  --text-dim: #a1623a;
+  --accent: #f97316;
+  --accent-text: #fff;
+  --input-bg: rgba(249, 115, 22, 0.07);
+  --input-border: rgba(249, 115, 22, 0.3);
+  --input-text: #4a2c14;
+  --hover-bg: rgba(249, 115, 22, 0.12);
+  --seg-bg: rgba(249, 115, 22, 0.08);
+  --seg-text: #7a4318;
+  --switch-bg: rgba(249, 115, 22, 0.32);
+  --status-ok: #15803d;
+  --status-err: #dc2626;
+  --h2: #c2410c;
+  --tag-bg: rgba(249, 115, 22, 0.14);
+  --tag-text: #c2410c;
+  --btn-close: #b45309;
+  --scroll-thumb: rgba(249, 115, 22, 0.35);
 }
 
 html,
@@ -15,7 +66,7 @@ body {
   background: transparent;
   overflow: hidden;
   font-family: 'Nunito', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  color: #ece7f7;
+  color: var(--text);
 }
 
 .panel {
@@ -23,10 +74,10 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(160deg, rgba(40, 34, 60, 0.94), rgba(28, 24, 44, 0.94));
+  background: var(--panel-bg);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--panel-border);
   border-radius: 18px;
   overflow: hidden;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
@@ -54,7 +105,7 @@ header .no-drag {
 #btn-close {
   background: transparent;
   border: none;
-  color: #b9aee0;
+  color: var(--btn-close);
   font-size: 14px;
   cursor: pointer;
   padding: 4px 8px;
@@ -62,8 +113,8 @@ header .no-drag {
 }
 
 #btn-close:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: var(--hover-bg);
+  color: var(--text);
 }
 
 /* ---------- Body ---------- */
@@ -71,6 +122,11 @@ header .no-drag {
   flex: 1;
   overflow-y: auto;
   padding: 4px 18px 18px;
+  /* Wide window: arrange the sections in two columns */
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 28px;
+  align-items: start;
 }
 
 .body::-webkit-scrollbar {
@@ -78,7 +134,7 @@ header .no-drag {
 }
 
 .body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--scroll-thumb);
   border-radius: 3px;
 }
 
@@ -89,7 +145,7 @@ section {
 h2 {
   font-size: 12px;
   font-weight: 800;
-  color: #c8bdf0;
+  color: var(--h2);
   margin-bottom: 8px;
   letter-spacing: 1.5px;
 }
@@ -97,8 +153,8 @@ h2 {
 .tag {
   font-size: 10px;
   font-weight: 600;
-  background: rgba(167, 139, 250, 0.25);
-  color: #c9b8ff;
+  background: var(--tag-bg);
+  color: var(--tag-text);
   padding: 2px 6px;
   border-radius: 8px;
   letter-spacing: 0;
@@ -115,12 +171,12 @@ h2 {
 
 .row > label {
   min-width: 96px;
-  color: #e6e0f5;
+  color: var(--text-soft);
   white-space: nowrap;
 }
 
 .row .val {
-  color: #a78bfa;
+  color: var(--accent);
   font-weight: 700;
 }
 
@@ -128,9 +184,9 @@ h2 {
 .row input[type='password'] {
   flex: 1;
   min-width: 0;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #fff;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--input-text);
   border-radius: 10px;
   padding: 7px 10px;
   font-size: 12.5px;
@@ -140,12 +196,12 @@ h2 {
 
 .row input[type='text']:focus,
 .row input[type='password']:focus {
-  border-color: #a78bfa;
+  border-color: var(--accent);
 }
 
 .row input[type='range'] {
   flex: 1;
-  accent-color: #a78bfa;
+  accent-color: var(--accent);
 }
 
 /* ---------- Segmented Select (Skin) ---------- */
@@ -155,9 +211,9 @@ h2 {
 }
 
 .seg button {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--seg-bg);
   border: 1px solid transparent;
-  color: #d9d2ef;
+  color: var(--seg-text);
   border-radius: 10px;
   padding: 6px 10px;
   font-size: 12px;
@@ -167,9 +223,9 @@ h2 {
 }
 
 .seg button.active {
-  background: #a78bfa;
-  color: #fff;
-  border-color: #a78bfa;
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
 }
 
 /* ---------- Switch ---------- */
@@ -190,7 +246,7 @@ h2 {
 .switch span {
   position: absolute;
   inset: 0;
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--switch-bg);
   border-radius: 22px;
   transition: background 0.2s;
   cursor: pointer;
@@ -209,7 +265,7 @@ h2 {
 }
 
 .switch input:checked + span {
-  background: #a78bfa;
+  background: var(--accent);
 }
 
 .switch input:checked + span::before {
@@ -218,9 +274,9 @@ h2 {
 
 /* ---------- Buttons ---------- */
 .ghost {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #ece7f7;
+  background: var(--seg-bg);
+  border: 1px solid var(--input-border);
+  color: var(--text);
   border-radius: 10px;
   padding: 7px 14px;
   font-size: 12.5px;
@@ -230,23 +286,34 @@ h2 {
 }
 
 .ghost:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--hover-bg);
 }
 
 .status {
   font-size: 11.5px;
-  color: #9ef0c0;
+  color: var(--status-ok);
   max-width: 170px;
   line-height: 1.4;
 }
 
 .status.err {
-  color: #f7a8b8;
+  color: var(--status-err);
 }
 
 .hint {
   font-size: 11px;
-  color: #9a8fc4;
+  color: var(--text-dim);
   margin-top: 8px;
   line-height: 1.7;
+}
+
+/* ---------- Affinity growth chart ---------- */
+.affinity-chart {
+  display: block;
+  width: 100%;
+  height: 110px;
+  margin-top: 2px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 10px;
 }

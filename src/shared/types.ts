@@ -7,11 +7,25 @@
 // deliberately avoided here so all three sides can use them directly.
 // ============================================================================
 
-/** Pet skin (cat/dog/default are built-in sprite sheets; custom is a custom image) */
-type PetSkin = 'cat' | 'dog' | 'default' | 'custom';
+/** Pet skin (cat/dog/default/robot are built-in sprite sheets; custom is a custom image) */
+type PetSkin = 'cat' | 'dog' | 'default' | 'robot' | 'custom';
 
 /** UI language */
 type Locale = 'zh' | 'en';
+
+/** UI theme: light = orange-white gradient, dark = the original purple tone */
+type Theme = 'light' | 'dark';
+
+/** Procedural pixel accessory worn by built-in sprite pets */
+type Accessory = 'none' | 'hat' | 'scarf' | 'glasses';
+
+/** One point of the daily affinity growth history */
+interface AffinityPoint {
+  /** Local date YYYY-MM-DD */
+  date: string;
+  /** Affinity value on that date */
+  value: number;
+}
 
 /** Display mode for the custom appearance (image or 3D model) */
 type CustomImageMode = 'single' | 'sheet' | 'model' | 'billboard';
@@ -104,8 +118,32 @@ interface AppConfig {
   customImageMode: CustomImageMode;
   /** Custom image path (for reference) */
   customImagePath: string;
+  /** Auto-cutout: remove the solid / simple background from imported images (single & billboard modes) */
+  autoCutout: boolean;
+  /** Cutout color tolerance 8 ~ 60 (higher = more aggressive background removal) */
+  cutoutTolerance: number;
   /** UI language */
   locale: Locale;
+  /** UI theme: light = orange-white gradient, dark = the original purple tone */
+  theme: Theme;
+  /** Procedural pixel accessory for built-in sprite pets */
+  accessory: Accessory;
+  /** Affinity with the pet (0 ~ 100, grows when you interact: click / drag / chat) */
+  affinity: number;
+  /** Focus mode: periodically remind the user to stand up and stretch (default on) */
+  focusMode: boolean;
+  /** Break reminder interval in minutes (20 / 30 / 40 / 60 / 90, default 40) */
+  focusInterval: number;
+  /** Interaction stats: first day the app was launched (YYYY-MM-DD) */
+  statsFirstSeen: string;
+  /** Interaction stats: distinct launch dates (YYYY-MM-DD) */
+  statsDays: string[];
+  /** Interaction stats: total clicks on the pet */
+  statsClicks: number;
+  /** Interaction stats: total AI chat messages sent */
+  statsChats: number;
+  /** Affinity growth history (one snapshot per interaction day, newest last) */
+  affinityHistory: AffinityPoint[];
 }
 
 /** API exposed to the renderer by the preload script via contextBridge */

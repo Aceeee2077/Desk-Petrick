@@ -18,7 +18,7 @@
     </header>
 
     <div class="body">
-      <!-- UI language -->
+      <!-- UI language + theme -->
       <section>
         <h2 data-i18n="settings.language">界面语言</h2>
         <div class="row">
@@ -26,6 +26,13 @@
           <div class="seg" id="locale-seg">
             <button data-locale="zh" class="active">中文</button>
             <button data-locale="en">English</button>
+          </div>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.theme">主题</label>
+          <div class="seg" id="theme-seg">
+            <button data-theme="light" class="active" data-i18n="settings.themeLight">☀️ 浅色</button>
+            <button data-theme="dark" data-i18n="settings.themeDark">🌙 深色</button>
           </div>
         </div>
       </section>
@@ -38,7 +45,23 @@
             <button data-skin="cat" data-i18n="settings.skinCat">🐱 猫</button>
             <button data-skin="dog" data-i18n="settings.skinDog">🐶 狗</button>
             <button data-skin="default" data-i18n="settings.skinDango">👻 团子</button>
+            <button data-skin="robot" data-i18n="settings.skinRobot">🤖 机器人</button>
             <button data-skin="custom" data-i18n="settings.skinCustom">🖼️ 自定义</button>
+          </div>
+        </div>
+        <!-- Affinity with the pet (grows when you click / drag / chat) -->
+        <div class="row">
+          <label data-i18n="affinity.title">好感度</label>
+          <span id="affinity-display" class="val"></span>
+        </div>
+        <!-- Procedural pixel accessory (built-in skins only) -->
+        <div class="row">
+          <label data-i18n="settings.accessory">配饰</label>
+          <div class="seg" id="accessory-seg">
+            <button data-accessory="none" class="active" data-i18n="settings.accessoryNone">无</button>
+            <button data-accessory="hat" data-i18n="settings.accessoryHat">🎩 帽子</button>
+            <button data-accessory="scarf" data-i18n="settings.accessoryScarf">🧣 围巾</button>
+            <button data-accessory="glasses" data-i18n="settings.accessoryGlasses">👓 眼镜</button>
           </div>
         </div>
         <!-- Custom appearance controls (only shown when "Custom" is selected) -->
@@ -56,6 +79,15 @@
             <button data-mode="billboard" data-i18n="settings.modeBillboard">🧱 2.5D 立牌</button>
           </div>
         </div>
+        <div class="row custom-row" hidden>
+          <label data-i18n="settings.cutout">自动抠图</label>
+          <label class="switch"><input type="checkbox" id="cutout" /><span></span></label>
+        </div>
+        <div class="row custom-row" hidden>
+          <label><span data-i18n="settings.cutoutTolerance">抠图灵敏度</span> <span id="cutout-tol-val" class="val">25</span></label>
+          <input type="range" id="cutout-tol" min="8" max="60" step="1" value="25" />
+        </div>
+        <p class="hint custom-row" hidden data-i18n-html="settings.cutoutHint"></p>
         <div class="row custom-row" hidden>
           <label></label>
           <button id="btn-clear-custom" class="ghost" data-i18n="settings.clearCustom">🗑️ 清除自定义外观</button>
@@ -80,6 +112,49 @@
         <div class="row">
           <button id="btn-reset" class="ghost" data-i18n="settings.resetPos">🎯 重置位置</button>
         </div>
+      </section>
+
+      <!-- Focus mode: periodic break reminders (default: every 40 minutes) -->
+      <section>
+        <h2 data-i18n="settings.focusSection">专注模式</h2>
+        <div class="row">
+          <label data-i18n="settings.focusMode">站立提醒</label>
+          <label class="switch"><input type="checkbox" id="focus-mode" /><span></span></label>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.focusInterval">提醒间隔</label>
+          <div class="seg" id="focus-interval-seg">
+            <button data-min="20">20</button>
+            <button data-min="30">30</button>
+            <button data-min="40" class="active">40</button>
+            <button data-min="60">60</button>
+            <button data-min="90">90</button>
+          </div>
+        </div>
+        <p class="hint" data-i18n-html="settings.focusHint"></p>
+      </section>
+
+      <!-- Interaction stats: companion days, click / chat counts, affinity growth curve -->
+      <section>
+        <h2 data-i18n="settings.statsSection">互动统计</h2>
+        <div class="row">
+          <label data-i18n="settings.statsDays">陪伴天数</label>
+          <span id="stats-days" class="val">0</span>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.statsFirstSeen">首次陪伴</label>
+          <span id="stats-first-seen" class="val">—</span>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.statsClicks">点击次数</label>
+          <span id="stats-clicks" class="val">0</span>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.statsChats">聊天次数</label>
+          <span id="stats-chats" class="val">0</span>
+        </div>
+        <p class="hint" data-i18n="settings.statsAffinityChart">好感度成长曲线</p>
+        <canvas id="affinity-chart" class="affinity-chart" width="400" height="110"></canvas>
       </section>
 
       <section>

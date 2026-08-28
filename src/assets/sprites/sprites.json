@@ -69,6 +69,28 @@
         "frames": 4,
         "fps": 12
       }
+    },
+    "robot": {
+      "idle": {
+        "row": 0,
+        "frames": 4,
+        "fps": 6
+      },
+      "walking": {
+        "row": 1,
+        "frames": 4,
+        "fps": 12
+      },
+      "sleeping": {
+        "row": 2,
+        "frames": 2,
+        "fps": 2
+      },
+      "click": {
+        "row": 3,
+        "frames": 4,
+        "fps": 12
+      }
     }
   }
 }

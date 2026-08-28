@@ -1,11 +1,83 @@
 /* ============================================================================
-   Petric pet window styles — transparent background + speech bubble + chat input
+   Petric pet window styles — transparent background + speech bubble + chat input.
+   Themeable via CSS variables: dark (default) = original purple tone,
+   light ([data-theme="light"]) = orange-white gradient.
    ============================================================================ */
 
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+/* ---------- Theme tokens ---------- */
+:root {
+  --bubble-bg: rgba(255, 255, 255, 0.96);
+  --bubble-border: #e3d9d2;
+  --bubble-text: #4a3f3a;
+  --bubble-tail: #fff;
+  --chat-bg: rgba(30, 26, 38, 0.86);
+  --chat-border: rgba(255, 255, 255, 0.18);
+  --chat-text: #fff;
+  --chat-reply-border: rgba(255, 255, 255, 0.12);
+  --chat-err: #f7a8b8;
+  --chat-icon: #b9aee0;
+  --chat-icon-hover-bg: rgba(255, 255, 255, 0.12);
+  --chat-icon-hover-text: #fff;
+  --chat-input: #fff;
+  --chat-placeholder: rgba(255, 255, 255, 0.45);
+  --chat-send-bg: #a78bfa;
+  --chat-send-hover: #b59ffb;
+  --chat-send-text: #fff;
+  --history-bg: rgba(30, 26, 38, 0.92);
+  --history-border: rgba(255, 255, 255, 0.18);
+  --history-head: #c8bdf0;
+  --msg-ai-bg: rgba(255, 255, 255, 0.12);
+  --msg-ai-text: #eee;
+  --msg-user-bg: #a78bfa;
+  --msg-user-text: #fff;
+  --msg-empty: #9a8fc4;
+  --badge-bg: rgba(255, 255, 255, 0.78);
+  --badge-border: rgba(227, 217, 210, 0.9);
+  --heart-on: #ff5c7a;
+  --heart-off: #cfc8da;
+  --scroll-thumb: rgba(255, 255, 255, 0.18);
+  /* Zzz particle base color (RGB triple, alpha applied per particle on the canvas) */
+  --zzz: 122, 96, 178;
+}
+
+:root[data-theme='light'] {
+  --bubble-bg: linear-gradient(180deg, #fffdfa, #fff1e2);
+  --bubble-border: #ffd9b8;
+  --bubble-text: #5a3a22;
+  --bubble-tail: #fff1e2;
+  --chat-bg: rgba(255, 248, 240, 0.94);
+  --chat-border: rgba(249, 115, 22, 0.28);
+  --chat-text: #4a2c14;
+  --chat-reply-border: rgba(249, 115, 22, 0.18);
+  --chat-err: #dc2626;
+  --chat-icon: #b45309;
+  --chat-icon-hover-bg: rgba(249, 115, 22, 0.12);
+  --chat-icon-hover-text: #7a3410;
+  --chat-input: #4a2c14;
+  --chat-placeholder: rgba(122, 70, 28, 0.5);
+  --chat-send-bg: #f97316;
+  --chat-send-hover: #fb923c;
+  --chat-send-text: #fff;
+  --history-bg: rgba(255, 248, 240, 0.97);
+  --history-border: rgba(249, 115, 22, 0.28);
+  --history-head: #c2410c;
+  --msg-ai-bg: rgba(249, 115, 22, 0.09);
+  --msg-ai-text: #4a2c14;
+  --msg-user-bg: #f97316;
+  --msg-user-text: #fff;
+  --msg-empty: #b3773f;
+  --badge-bg: rgba(255, 255, 255, 0.85);
+  --badge-border: rgba(255, 217, 184, 0.95);
+  --heart-on: #ff7a3c;
+  --heart-off: #e8d5c2;
+  --scroll-thumb: rgba(249, 115, 22, 0.35);
+  --zzz: 249, 115, 22;
 }
 
 html,
@@ -62,10 +134,10 @@ body {
   max-width: 252px;
   min-height: 28px;
   padding: 7px 12px;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1.5px solid #e3d9d2;
+  background: var(--bubble-bg);
+  border: 1.5px solid var(--bubble-border);
   border-radius: 14px;
-  color: #4a3f3a;
+  color: var(--bubble-text);
   font-size: 13px;
   line-height: 1.5;
   text-align: center;
@@ -86,7 +158,7 @@ body {
   left: 50%;
   bottom: -8px;
   border: 6px solid transparent;
-  border-top-color: #fff;
+  border-top-color: var(--bubble-tail);
   border-bottom: 0;
   transform: translateX(-50%);
 }
@@ -94,6 +166,38 @@ body {
 #bubble.show {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* ---------- Affinity Badge (centered directly above the pet, below the speech bubble) ---------- */
+#affinity-badge {
+  position: absolute;
+  /* Centered horizontally WITHOUT relying on transform (same technique as #bubble) */
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: fit-content;
+  /* Default = just above the built-in pet (top at y=200); app.ts keeps it in sync
+     with currentPetTop so it follows custom / 3D pets too. */
+  bottom: 106px;
+  z-index: 30;
+  pointer-events: none; /* purely decorative: clicks pass through to the pet / desktop */
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  background: var(--badge-bg);
+  border: 1px solid var(--badge-border);
+  border-radius: 10px;
+  padding: 2px 7px 3px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+  user-select: none;
+  white-space: nowrap;
+}
+
+#affinity-badge .on {
+  color: var(--heart-on);
+}
+
+#affinity-badge .off {
+  color: var(--heart-off);
 }
 
 /* ---------- AI Chat Console ---------- */
@@ -112,8 +216,8 @@ body {
   flex-direction: column;
   align-items: stretch;
   z-index: 20;
-  background: rgba(30, 26, 38, 0.86);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: var(--chat-bg);
+  border: 1px solid var(--chat-border);
   border-radius: 18px;
   padding: 6px 8px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
@@ -126,14 +230,14 @@ body {
 /* Latest AI reply, rendered INSIDE the console (above the input row) so it can never be
    covered by the input or travel with the window */
 #chat-reply {
-  color: #fff;
+  color: var(--chat-text);
   font-size: 12px;
   line-height: 1.5;
   max-height: 54px;
   overflow-y: auto;
   padding: 2px 4px 6px;
   margin-bottom: 5px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid var(--chat-reply-border);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -143,7 +247,7 @@ body {
 }
 
 #chat-reply.err {
-  color: #f7a8b8;
+  color: var(--chat-err);
 }
 
 .chat-row {
@@ -155,7 +259,7 @@ body {
 .chat-icon-btn {
   background: transparent;
   border: none;
-  color: #b9aee0;
+  color: var(--chat-icon);
   font-size: 15px;
   cursor: pointer;
   padding: 2px 5px;
@@ -164,8 +268,8 @@ body {
 }
 
 .chat-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: var(--chat-icon-hover-bg);
+  color: var(--chat-icon-hover-text);
 }
 
 #chat-input {
@@ -173,13 +277,13 @@ body {
   border: none;
   outline: none;
   background: transparent;
-  color: #fff;
+  color: var(--chat-input);
   font-size: 12.5px;
   font-family: inherit;
 }
 
 #chat-input::placeholder {
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--chat-placeholder);
 }
 
 #chat-send {
@@ -187,14 +291,14 @@ body {
   border-radius: 12px;
   padding: 4px 10px;
   font-size: 12px;
-  background: #a78bfa;
-  color: #fff;
+  background: var(--chat-send-bg);
+  color: var(--chat-send-text);
   cursor: pointer;
   font-family: inherit;
 }
 
 #chat-send:hover {
-  background: #b59ffb;
+  background: var(--chat-send-hover);
 }
 
 /* ---------- Chat History Overlay ---------- */
@@ -207,8 +311,8 @@ body {
   display: flex;
   flex-direction: column;
   z-index: 21;
-  background: rgba(30, 26, 38, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: var(--history-bg);
+  border: 1px solid var(--history-border);
   border-radius: 14px;
   padding: 8px 10px;
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
@@ -222,7 +326,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #c8bdf0;
+  color: var(--history-head);
   font-size: 12px;
   font-weight: 700;
   margin-bottom: 6px;
@@ -242,7 +346,7 @@ body {
 }
 
 #chat-history-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--scroll-thumb);
   border-radius: 3px;
 }
 
@@ -258,21 +362,21 @@ body {
 
 .msg.user {
   align-self: flex-end;
-  background: #a78bfa;
-  color: #fff;
+  background: var(--msg-user-bg);
+  color: var(--msg-user-text);
   border-bottom-right-radius: 3px;
 }
 
 .msg.ai {
   align-self: flex-start;
-  background: rgba(255, 255, 255, 0.12);
-  color: #eee;
+  background: var(--msg-ai-bg);
+  color: var(--msg-ai-text);
   border-bottom-left-radius: 3px;
 }
 
 .msg.empty {
   align-self: center;
   background: none;
-  color: #9a8fc4;
+  color: var(--msg-empty);
   font-size: 11.5px;
 }

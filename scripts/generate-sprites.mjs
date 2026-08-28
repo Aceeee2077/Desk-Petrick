@@ -3,7 +3,7 @@
 //
 // Run: npm run sprites
 // Output:
-//   src/assets/sprites/{cat,dog,default}.png  —— 128x128 sprite sheets
+//   src/assets/sprites/{cat,dog,default,robot}.png  —— 128x128 sprite sheets
 //     · Rows: idle(4 frames) / walking(4 frames) / sleeping(2 frames) / click(4 frames)
 //     · Frame size: 32x32, canvas upscaled by a 3x integer factor (pixel-art style)
 //     · Eyes/blinking/Zzz are drawn on top by the renderer (eyes follow the mouse)
@@ -88,6 +88,14 @@ const PALETTES = {
     nose: [109, 79, 176, 255],
     whisker: [107, 90, 143, 255],
     outline: [70, 54, 94, 255],
+  },
+  robot: {
+    body: [122, 136, 166, 255], // steel blue
+    light: [206, 218, 236, 255], // screen / belly panel
+    pink: [255, 118, 132, 255], // antenna light / accents
+    nose: [255, 205, 112, 255], // power button
+    whisker: [88, 100, 128, 255], // panel lines
+    outline: [42, 48, 66, 255],
   },
 };
 
@@ -219,6 +227,14 @@ function drawPet(c, pal, pose, kind) {
     } else if (kind === 'dog') {
       fillEllipse(c, 9, 17, 2.4, 4.8, pal.ear);
       fillEllipse(c, 23, 17, 2.4, 4.8, pal.ear);
+    } else if (kind === 'robot') {
+      // Side antenna stubs + top antenna with a light
+      fillRect(c, 5, 10, 8, 13, pal.outline);
+      fillRect(c, 6, 11, 7, 12, pal.body);
+      fillRect(c, 24, 10, 27, 13, pal.outline);
+      fillRect(c, 25, 11, 26, 12, pal.body);
+      line(c, 16, 10.2, 16, 5.2, pal.outline);
+      fillEllipse(c, 16, 4.6, 1.3, 1.3, pal.pink);
     } else {
       fillEllipse(c, 11.5, 11.5, 2.4, 2.6, pal.body);
       fillEllipse(c, 20.5, 11.5, 2.4, 2.6, pal.body);
@@ -239,13 +255,18 @@ function drawPet(c, pal, pose, kind) {
     } else if (kind === 'cat') {
       fillEllipse(c, 16, 20.8, 3.2, 2.4, pal.light);
       fillTriangle(c, [[15.2, 19.2], [16.8, 19.2], [16, 20.4]], pal.nose);
+    } else if (kind === 'robot') {
+      // Screen face with "digital" eyes (covers the generic eyes underneath)
+      fillEllipse(c, 16, 19.6, 5.6, 4.4, pal.light);
+      fillEllipse(c, 12.8, 18.8, 1.3, 2, [78, 88, 110, 255]);
+      fillEllipse(c, 19.2, 18.8, 1.3, 2, [78, 88, 110, 255]);
     } else {
       fillEllipse(c, 16, 21.2, 3, 2.2, pal.light);
       fillTriangle(c, [[15.4, 19.7], [16.6, 19.7], [16, 20.7]], pal.nose);
     }
     line(c, 16, kind === 'cat' ? 20.4 : kind === 'dog' ? 20.8 : 20.7, 14.6, 21.9, pal.whisker);
     line(c, 16, kind === 'cat' ? 20.4 : kind === 'dog' ? 20.8 : 20.7, 17.4, 21.9, pal.whisker);
-    if (kind !== 'dog') {
+    if (kind !== 'dog' && kind !== 'robot') {
       line(c, 12.4, 20.2, 6.8, 18.8, pal.whisker);
       line(c, 12.4, 21.4, 6.8, 22.6, pal.whisker);
       line(c, 19.6, 20.2, 25.2, 18.8, pal.whisker);
@@ -291,13 +312,24 @@ function drawPet(c, pal, pose, kind) {
     // Floppy ears
     fillEllipse(c, 9, 12.5 + dy, 2.4, 4.8, pal.ear);
     fillEllipse(c, 23, 12.5 + dy, 2.4, 4.8, pal.ear);
+  } else if (kind === 'robot') {
+    // Side antenna stubs (stick out past the head) + top antenna with a light
+    // fillRect needs integer coordinates (typed-array indexing drops fractional indices)
+    const rdy = Math.round(dy);
+    fillRect(c, 5, 9 + rdy, 8, 12 + rdy, pal.outline);
+    fillRect(c, 6, 10 + rdy, 7, 11 + rdy, pal.body);
+    fillRect(c, 24, 9 + rdy, 27, 12 + rdy, pal.outline);
+    fillRect(c, 25, 10 + rdy, 26, 11 + rdy, pal.body);
+    line(c, 16, 6 + dy, 16, 2 + dy, pal.outline);
+    fillEllipse(c, 16, 1.6 + dy, 1.2, 1.2, pal.pink);
   } else {
     // Dumpling's small round ears + antenna
     fillEllipse(c, 11.5, 6 + dy, 2.4, 2.6, pal.body);
     fillEllipse(c, 20.5, 6 + dy, 2.4, 2.6, pal.body);
     line(c, 16, 6 + dy, 16, 2.5 + dy, pal.outline);
-    fillRect(c, 15, 1.6 + dy, 17, 3 + dy, pal.light);
-    fillRect(c, 14.6, 2 + dy, 17.4, 2 + dy, pal.light);
+    // Antenna light bar (integer coords; fractional fillRect is dropped by typed arrays)
+    fillRect(c, 15, 2 + Math.round(dy), 17, 3 + Math.round(dy), pal.light);
+    fillRect(c, 14, 2 + Math.round(dy), 17, 2 + Math.round(dy), pal.light);
   }
 
   // Head
@@ -313,6 +345,13 @@ function drawPet(c, pal, pose, kind) {
   } else if (kind === 'cat') {
     fillEllipse(c, 16, 16.2 + dy, 3.2, 2.4, pal.light);
     fillTriangle(c, [[15.2, 14.7 + dy], [16.8, 14.7 + dy], [16, 15.9 + dy]], pal.nose);
+  } else if (kind === 'robot') {
+    // Screen face — the eyes are overlaid by the renderer (eye tracking), so no eyes here.
+    // The generic "w" mouth below lands on the screen as a smile.
+    fillEllipse(c, 16, 13.2 + dy, 5.6, 4.6, pal.light);
+    // Belly panel + power button on the body
+    line(c, 11, 22.6 + dy, 21, 22.6 + dy, pal.whisker);
+    fillEllipse(c, 16, 21.2 + dy, 1.1, 1.1, pal.nose);
   } else {
     fillEllipse(c, 16, 16.6 + dy, 3, 2.2, pal.light);
     fillTriangle(c, [[15.4, 15.2 + dy], [16.6, 15.2 + dy], [16, 16.2 + dy]], pal.nose);
@@ -326,7 +365,7 @@ function drawPet(c, pal, pose, kind) {
   }
 
   // Whiskers
-  if (kind !== 'dog') {
+  if (kind !== 'dog' && kind !== 'robot') {
     line(c, 12.4, 15.6 + dy, 6.8, 14.2 + dy, pal.whisker);
     line(c, 12.4, 16.8 + dy, 6.8, 18 + dy, pal.whisker);
     line(c, 19.6, 15.6 + dy, 25.2, 14.2 + dy, pal.whisker);
@@ -459,7 +498,7 @@ writeFileSync(
 );
 console.log('✓ 元信息 sprites.json');
 
-// Icons: head avatars for the three pets + app/tray icons (the cat is used as the default icon)
+// Icons: head avatars for the pets + app/tray icons (the cat is used as the default icon)
 for (const [kind, pal] of Object.entries(PALETTES)) {
   const head = makeCanvas(32, 32);
   drawPet(head, pal, { icon: true }, kind);

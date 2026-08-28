@@ -7,6 +7,10 @@
 //  - Eyes follow the mouse + periodic blinking + floating Zzz while sleeping
 //  - Drag to move the window (absolute positioning in screen coordinates, no cumulative drift)
 //  - Single click: speech bubble / double click: AI chat (history kept in localStorage)
+//  - Affinity (好感度): clicking / dragging / chatting raise affinity, shown as hearts in a corner badge
+//  - Focus mode (专注模式): while enabled, reminds the user every N minutes to stand up and stretch
+//  - Accessories (装扮系统): procedural pixel hat / scarf / glasses overlaid on built-in skins
+//  - Idle actions (随机小动作): the pet randomly yawns / stretches / scratches / dances while idle
 //  - Hotkeys: Ctrl+Shift+P opens settings; Esc quits the pet
 //
 // Global types come from src/shared/types.ts (interface declarations, compile-time only).
@@ -22,6 +26,7 @@ const chatHistoryBtn = document.getElementById('chat-history-btn') as HTMLButton
 const chatHistoryEl = document.getElementById('chat-history') as HTMLDivElement;
 const chatHistoryList = document.getElementById('chat-history-list') as HTMLDivElement;
 const chatHistoryClose = document.getElementById('chat-history-close') as HTMLButtonElement;
+const affinityBadgeEl = document.getElementById('affinity-badge') as HTMLDivElement;
 
 const ctx = canvas.getContext('2d')!;
 
@@ -65,8 +70,24 @@ let config: AppConfig = {
   soundEnabled: true,
   customImageMode: 'single',
   customImagePath: '',
+  autoCutout: true,
+  cutoutTolerance: 25,
   locale: 'zh',
+  theme: 'light',
+  accessory: 'none',
+  affinity: 0,
+  focusMode: true,
+  focusInterval: 40,
+  statsFirstSeen: '',
+  statsDays: [],
+  statsClicks: 0,
+  statsChats: 0,
+  affinityHistory: [],
 };
+
+// Smoke mode (main loads index.html?smoke=1): skip auto-played idle actions so
+// synthetic clicks in the smoke test always land on the pet.
+const IS_SMOKE = /[?&]smoke=1/.test(window.location.search);
 
 let state: PetState = 'idle';
 let prevState: PetState = 'idle';
@@ -107,6 +128,165 @@ interface CustomSprite {
 let customSprite: CustomSprite | null = null;
 // Current pet top y (used to position Zzz particles, updated each draw)
 let currentPetTop = PET_Y;
+
+// ---------- Affinity (好感度) ----------
+// The pet grows closer to you as you interact: clicking, dragging and chatting all
+// add affinity (persisted in the config). Levels show as hearts on a small badge.
+const AFFINITY_MAX = 100;
+const AFFINITY_LEVEL_MINS = [0, 20, 40, 60, 80]; // a level starts once the value reaches its min
+
+function affinityLevelIndex(value: number): number {
+  let idx = 0;
+  for (let i = 0; i < AFFINITY_LEVEL_MINS.length; i++) {
+    if (value >= AFFINITY_LEVEL_MINS[i]) idx = i;
+  }
+  return idx;
+}
+
+function affinityLevelName(value: number): string {
+  return window.PetricI18n.t(`affinity.level${affinityLevelIndex(value) + 1}`);
+}
+
+/** Rebuild the hearts badge in the top-right corner of the pet window. */
+function renderAffinityBadge() {
+  const idx = affinityLevelIndex(config.affinity);
+  let hearts = '';
+  for (let i = 0; i < 5; i++) {
+    hearts += `<span class="${i <= idx ? 'on' : 'off'}">♥</span>`;
+  }
+  affinityBadgeEl.innerHTML = hearts;
+  affinityBadgeEl.title = window.PetricI18n.t('affinity.badgeTitle', {
+    value: Math.round(config.affinity),
+    level: affinityLevelName(config.affinity),
+  });
+}
+
+let affinitySaveTimer: number | undefined;
+
+/** Persist affinity + interaction stats (debounced so rapid clicks don't thrash the config file). */
+function saveStats() {
+  window.clearTimeout(affinitySaveTimer);
+  affinitySaveTimer = window.setTimeout(() => {
+    void window.api.setConfig({
+      affinity: Math.round(config.affinity),
+      statsClicks: config.statsClicks,
+      statsChats: config.statsChats,
+      affinityHistory: config.affinityHistory.slice(-120),
+    });
+  }, 500);
+}
+
+/** Local date as YYYY-MM-DD (matches the main process's companion-day tracking). */
+function todayStr(): string {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+/** Append one affinity snapshot per interaction day (for the growth curve in Settings). */
+function recordAffinitySnapshot() {
+  const hist = Array.isArray(config.affinityHistory) ? config.affinityHistory.slice() : [];
+  const last = hist[hist.length - 1];
+  const today = todayStr();
+  if (!last || last.date !== today) {
+    hist.push({ date: today, value: Math.round(config.affinity) });
+    config.affinityHistory = hist;
+  }
+}
+
+/** Add affinity from an interaction; returns whether it caused a level-up. */
+function addAffinity(n: number): boolean {
+  const beforeIdx = affinityLevelIndex(config.affinity);
+  config.affinity = Math.min(AFFINITY_MAX, config.affinity + n);
+  recordAffinitySnapshot();
+  saveStats();
+  renderAffinityBadge();
+  return affinityLevelIndex(config.affinity) > beforeIdx;
+}
+
+// ---------- Focus mode / break reminder (专注模式) ----------
+// While the pet is open and focus mode is on, Petric reminds you every
+// focusInterval minutes to stand up and stretch (text follows the UI language).
+let reminderTimer: number | undefined;
+
+function startReminder() {
+  window.clearInterval(reminderTimer);
+  if (!config.focusMode) return;
+  const minutes = Math.max(5, config.focusInterval || 40);
+  reminderTimer = window.setInterval(remind, minutes * 60_000);
+}
+
+function remind() {
+  // Wake the pet and play a little jump so the reminder is hard to miss
+  lastActivity = Date.now();
+  wake();
+  setState('click');
+  const text = '⏰ ' + window.PetricI18n.t('reminder.break');
+  if (!chatUiEl.classList.contains('hidden')) {
+    showChatReply(text);
+  } else {
+    showBubble(text, { ms: 6000 });
+  }
+  playChime();
+}
+
+// ---------- Random idle actions (随机小动作) ----------
+// While the pet idles it occasionally yawns / stretches / scratches / dances.
+// These are drawn as canvas transforms on top of the idle sprite (no extra sprite
+// rows needed), and only apply to the built-in sprite skins.
+type IdleAction = 'yawn' | 'stretch' | 'scratch' | 'dance';
+
+let currentAction: { type: IdleAction; t0: number } | null = null;
+let nextActionAt = Date.now() + 8000 + Math.random() * 10000; // first action after 8-18s of idle
+
+const ACTION_DURATION: Record<IdleAction, number> = { yawn: 2.0, stretch: 2.2, scratch: 2.4, dance: 2.6 };
+const ACTION_TYPES: IdleAction[] = ['yawn', 'stretch', 'scratch', 'dance'];
+
+/** Compute the per-frame action transform (rotation / scale / yawn mouth / closed eyes). */
+function computeActionFx(): {
+  rot: number;
+  scx: number;
+  scy: number;
+  mouth: number;
+  eyesClosed: boolean;
+} | null {
+  if (!currentAction || config.skin === 'custom' || state !== 'idle') return null;
+  const t = (performance.now() - currentAction.t0) / 1000;
+  const T = ACTION_DURATION[currentAction.type];
+  const p = Math.min(1, t / T);
+  const env = Math.sin(Math.PI * p); // 0 → 1 → 0 envelope
+  switch (currentAction.type) {
+    case 'yawn': {
+      // Mouth opens, holds, then closes; eyes shut while it's open wide
+      const mouth = p < 0.35 ? p / 0.35 : p > 0.75 ? (1 - p) / 0.25 : 1;
+      return { rot: 0, scx: 1 + env * 0.02, scy: 1 + env * 0.06, mouth, eyesClosed: mouth > 0.55 };
+    }
+    case 'stretch':
+      // Tall stretch: grow upward, slight x-squash
+      return { rot: 0, scx: 1 - env * 0.05, scy: 1 + env * 0.18, mouth: 0, eyesClosed: false };
+    case 'scratch':
+      // Scratch: tilt side to side around the feet
+      return { rot: Math.sin(t * 2 * Math.PI * 1.5) * 0.09 * env, scx: 1, scy: 1, mouth: 0, eyesClosed: false };
+    case 'dance':
+      // Dance: lively side-to-side sway + scale wobble
+      return {
+        rot: Math.sin(t * 2 * Math.PI * 2.2) * 0.16,
+        scx: 1 + Math.sin(t * 2 * Math.PI * 4.4) * 0.03,
+        scy: 1,
+        mouth: 0,
+        eyesClosed: false,
+      };
+  }
+}
+
+/** Stop the current idle action and schedule the next one. */
+function stopAction() {
+  if (currentAction) {
+    currentAction = null;
+    nextActionAt = Date.now() + 6000 + Math.random() * 10000;
+  }
+}
 
 // ---------- 3D Model Mode (customImageMode === 'model') ----------
 // window.Petric3D is provided by pet3d.js (vendored three.js). Null when unavailable.
@@ -170,7 +350,7 @@ function clamp(v: number, min: number, max: number): number {
 
 // ---------- Sprites ----------
 function loadSheets() {
-  (['cat', 'dog', 'default'] as PetSkin[]).forEach((s) => {
+  (['cat', 'dog', 'default', 'robot'] as PetSkin[]).forEach((s) => {
     const img = new Image();
     img.src = `../assets/sprites/${s}.png`;
     sheets[s] = img;
@@ -220,7 +400,20 @@ function update(dt: number) {
 
   // Sleep check: 30s of inactivity and not dragging / chatting
   if (now - lastActivity > SLEEP_MS && state !== 'sleeping' && !dragging && chatUiEl.classList.contains('hidden')) {
+    currentAction = null;
     enterSleep();
+  }
+
+  // Random idle actions: while awake and idle (and not in smoke mode) the pet
+  // occasionally yawns / stretches / scratches / dances on its own.
+  if (!IS_SMOKE && state === 'idle' && !dragging && chatUiEl.classList.contains('hidden')) {
+    if (!currentAction && now >= nextActionAt) {
+      currentAction = { type: ACTION_TYPES[Math.floor(Math.random() * ACTION_TYPES.length)], t0: now };
+    }
+    if (currentAction && now - currentAction.t0 >= ACTION_DURATION[currentAction.type] * 1000) {
+      currentAction = null;
+      nextActionAt = now + 6000 + Math.random() * 10000;
+    }
   }
 
   // Zzz particles while sleeping
@@ -270,14 +463,14 @@ function eyeScreenPos(poseDy: number) {
   return { left: px(11.5, 13.2), right: px(20.5, 13.2), head: px(16, 14) };
 }
 
-function drawEyes() {
+function drawEyes(forceClosed = false) {
   const poseDy = POSE_DY[state][frameIndex] ?? 0;
   const { left, right, head } = eyeScreenPos(poseDy);
   ctx.save();
   ctx.lineCap = 'round';
 
-  if (state === 'sleeping') {
-    // Closed-eye arc while sleeping
+  if (state === 'sleeping' || forceClosed) {
+    // Closed-eye arc while sleeping / yawning
     ctx.strokeStyle = '#3b2f26';
     ctx.lineWidth = 1.8;
     [left, right].forEach((e) => {
@@ -321,16 +514,133 @@ function drawEyes() {
   ctx.restore();
 }
 
+// ---------- Accessories (装扮系统) ----------
+// Procedural pixel accessories drawn on top of the built-in sprite sheets, at the
+// same frame-coordinate positions as the eyes (scaled by SHEET.scale).
+const ACC_COLORS = {
+  red: '#e05555',
+  redDark: '#a03030',
+  outline: '#5a2d2d',
+  white: '#f4f0ea',
+  lens: 'rgba(255,255,255,0.28)',
+};
+
+function drawAccessory() {
+  const acc = config.accessory;
+  if (!acc || acc === 'none') return;
+  const poseDy = POSE_DY[state][frameIndex] ?? 0;
+  const sx = (fx: number) => PET_X + fx * SHEET.scale;
+  const sy = (fy: number) => PET_Y + (fy + poseDy) * SHEET.scale;
+
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+
+  if (acc === 'hat') {
+    // Red beanie: crown + brim + pompom
+    ctx.fillStyle = ACC_COLORS.red;
+    ctx.strokeStyle = ACC_COLORS.outline;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(sx(12.8), sy(0.8), 6.4 * SHEET.scale, 4.6 * SHEET.scale, 3);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = ACC_COLORS.redDark;
+    ctx.beginPath();
+    ctx.roundRect(sx(11.4), sy(5.2), 9.2 * SHEET.scale, 1.6 * SHEET.scale, 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = ACC_COLORS.white;
+    ctx.beginPath();
+    ctx.arc(sx(16), sy(0.8), 1.3 * SHEET.scale, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = ACC_COLORS.outline;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  } else if (acc === 'scarf') {
+    // Warm scarf: neck band + hanging tail with a tassel
+    ctx.fillStyle = ACC_COLORS.red;
+    ctx.strokeStyle = ACC_COLORS.outline;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(sx(11.4), sy(16.6), 9.2 * SHEET.scale, 1.7 * SHEET.scale, 2.5);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.roundRect(sx(17.6), sy(18.1), 2.0 * SHEET.scale, 3.2 * SHEET.scale, 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = ACC_COLORS.redDark;
+    ctx.fillRect(sx(17.6), sy(21), 2.0 * SHEET.scale, 0.7 * SHEET.scale);
+  } else if (acc === 'glasses') {
+    // Round glasses around the eyes (drawn before the pupils so they show through)
+    ctx.strokeStyle = '#3b2f26';
+    ctx.lineWidth = 2.2;
+    ctx.fillStyle = ACC_COLORS.lens;
+    ([[11.5, 13.2], [20.5, 13.2]] as [number, number][]).forEach(([ex, ey]) => {
+      ctx.beginPath();
+      ctx.arc(sx(ex), sy(ey), 2.5 * SHEET.scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    });
+    // Bridge
+    ctx.beginPath();
+    ctx.moveTo(sx(14.2), sy(13.2));
+    ctx.lineTo(sx(17.8), sy(13.2));
+    ctx.stroke();
+    // Temples
+    ctx.beginPath();
+    ctx.moveTo(sx(9.0), sy(13.2));
+    ctx.lineTo(sx(7.4), sy(12.3));
+    ctx.moveTo(sx(23.0), sy(13.2));
+    ctx.lineTo(sx(24.6), sy(12.3));
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+/** Open mouth drawn while yawning (mouth: 0 = closed … 1 = wide open). */
+function drawYawnMouth(mouth: number) {
+  const poseDy = POSE_DY[state][frameIndex] ?? 0;
+  const mx = PET_X + 16 * SHEET.scale;
+  const my = PET_Y + (16 + poseDy) * SHEET.scale;
+  const rx = (1.6 + mouth * 1.8) * SHEET.scale;
+  const ry = (0.9 + mouth * 2.2) * SHEET.scale;
+  ctx.fillStyle = '#5a3f33';
+  ctx.beginPath();
+  ctx.ellipse(mx, my, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (mouth > 0.5) {
+    ctx.fillStyle = '#e08a8a';
+    ctx.beginPath();
+    ctx.ellipse(mx, my + ry * 0.35, rx * 0.55, ry * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function draw() {
   ctx.clearRect(0, 0, 300, 300);
 
-  // Ground shadow (also shown under the 3D model)
+  // Ground shadow (also shown under the 3D model; stays untransformed)
   ctx.fillStyle = 'rgba(0,0,0,0.16)';
   ctx.beginPath();
   ctx.ellipse(150, 296, 34, 7, 0, 0, Math.PI * 2);
   ctx.fill();
 
   const isCustom = config.skin === 'custom';
+  const fx = computeActionFx();
+
+  // Idle actions rotate / stretch the pet around its feet; the pet, its accessory,
+  // the eyes and the yawn mouth all live inside the same transform so they stay attached.
+  ctx.save();
+  if (fx) {
+    ctx.translate(150, 292);
+    ctx.rotate(fx.rot);
+    ctx.scale(fx.scx, fx.scy);
+    ctx.translate(-150, -292);
+  }
+
   if (pet3dActive && pet3d) {
     // 3D mode: the model lives on its own canvas (pet3d-canvas); only the shadow + Zzz stay on the 2D canvas
     currentPetTop = 172; // approximate model top for Zzz particles
@@ -340,15 +650,25 @@ function draw() {
     drawBuiltInPet();
   }
 
-  // Eye tracking only applies to built-in sprites (custom images already contain eyes, and the face can't be located)
-  if (!isCustom) drawEyes();
+  // Accessories + eyes only apply to built-in sprites (custom images already contain their face)
+  if (!isCustom) {
+    drawAccessory();
+    drawEyes(fx ? fx.eyesClosed : false);
+    if (fx && fx.mouth > 0) drawYawnMouth(fx.mouth);
+  }
+  ctx.restore();
 
-  // Sleep Zzz
+  // Affinity badge: keep it centered directly above the pet (and below the speech bubble /
+  // chat console, whose bottom sits at 186px). Follows the pet's current top (built-in,
+  // custom image or 3D model) so it never drifts away.
+  affinityBadgeEl.style.bottom = `${300 - currentPetTop + 6}px`;
+
+  // Sleep Zzz (color follows the theme: purple in dark mode, orange in light mode)
   if (state === 'sleeping') {
     ctx.font = 'bold 15px Nunito, "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     zzzs.forEach((z) => {
-      ctx.fillStyle = `rgba(122, 96, 178, ${z.alpha.toFixed(3)})`;
+      ctx.fillStyle = `rgba(${zzzRgb}, ${z.alpha.toFixed(3)})`;
       ctx.fillText('Z', z.x, z.y);
     });
   }
@@ -450,6 +770,112 @@ function drawCustomPet() {
   ctx.restore();
 }
 
+// ---------- Auto cutout (自动抠图) ----------
+// Removes the solid / simple background from an imported image: flood-fill from the
+// image borders with an edge-connected color tolerance (handles flat AND gradient
+// backgrounds), then a fringe pass eats the anti-aliased halo at the cut line.
+// Returns a new PNG data URL; falls back to the original on any failure.
+
+function cutoutBackground(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const w = img.naturalWidth;
+        const h = img.naturalHeight;
+        if (!w || !h || w < 8 || h < 8) {
+          resolve(dataUrl);
+          return;
+        }
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        const cx = c.getContext('2d', { willReadFrequently: true })!;
+        cx.drawImage(img, 0, 0);
+        const imgData = cx.getImageData(0, 0, w, h);
+        const d = imgData.data;
+        // Tolerance in RGB distance (0..441); slider range 8..60 maps to a useful band
+        const tol = ((config.cutoutTolerance ?? 25) / 25) * 110;
+        const alphaAt = (p: number) => d[p * 4 + 3];
+        const colorDist = (a: number, b: number) => {
+          const dr = d[a * 4] - d[b * 4];
+          const dg = d[a * 4 + 1] - d[b * 4 + 1];
+          const db = d[a * 4 + 2] - d[b * 4 + 2];
+          return Math.sqrt(dr * dr + dg * dg + db * db);
+        };
+
+        // BFS flood fill from every opaque border pixel (edge-connected tolerance)
+        const removed = new Uint8Array(w * h);
+        const queue = new Int32Array(w * h);
+        let head = 0;
+        let tail = 0;
+        const seed = (p: number) => {
+          if (removed[p] || alphaAt(p) === 0) return;
+          removed[p] = 1;
+          queue[tail++] = p;
+        };
+        for (let x = 0; x < w; x++) {
+          seed(x);
+          seed((h - 1) * w + x);
+        }
+        for (let y = 1; y < h - 1; y++) {
+          seed(y * w);
+          seed(y * w + w - 1);
+        }
+        while (head < tail) {
+          const p = queue[head++];
+          const x = p % w;
+          const y = (p / w) | 0;
+          if (x > 0 && !removed[p - 1] && colorDist(p, p - 1) <= tol) {
+            removed[p - 1] = 1;
+            queue[tail++] = p - 1;
+          }
+          if (x < w - 1 && !removed[p + 1] && colorDist(p, p + 1) <= tol) {
+            removed[p + 1] = 1;
+            queue[tail++] = p + 1;
+          }
+          if (y > 0 && !removed[p - w] && colorDist(p, p - w) <= tol) {
+            removed[p - w] = 1;
+            queue[tail++] = p - w;
+          }
+          if (y < h - 1 && !removed[p + w] && colorDist(p, p + w) <= tol) {
+            removed[p + w] = 1;
+            queue[tail++] = p + w;
+          }
+        }
+
+        // Fringe pass: also drop opaque pixels hugging the cut line that are close in
+        // color to the removed background (eats the anti-aliased halo).
+        const fringe = new Uint8Array(w * h);
+        for (let p = 0; p < w * h; p++) {
+          if (removed[p] || alphaAt(p) === 0) continue;
+          const x = p % w;
+          const y = (p / w) | 0;
+          const near = (q: number) => removed[q] && colorDist(p, q) <= tol * 1.4;
+          if (
+            (x > 0 && near(p - 1)) ||
+            (x < w - 1 && near(p + 1)) ||
+            (y > 0 && near(p - w)) ||
+            (y < h - 1 && near(p + w))
+          ) {
+            fringe[p] = 1;
+          }
+        }
+        for (let p = 0; p < w * h; p++) {
+          if (removed[p] || fringe[p]) d[p * 4 + 3] = 0;
+        }
+
+        cx.putImageData(imgData, 0, 0);
+        resolve(c.toDataURL('image/png'));
+      } catch {
+        resolve(dataUrl); // never break the custom appearance because of cutout
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 /** Load / refresh the custom appearance (gets a data URL from the main process) */
 async function refreshCustomSprite() {
   customSprite = null;
@@ -466,6 +892,10 @@ async function refreshCustomSprite() {
     return;
   }
 
+  // Auto cutout applies to flat image modes (single / billboard), not sheets or 3D models
+  const canCutout = config.autoCutout && (res.mode === 'single' || res.mode === 'billboard');
+  const dataUrl = canCutout ? await cutoutBackground(res.dataUrl) : res.dataUrl;
+
   if (res.mode === 'model' || res.mode === 'billboard') {
     // 3D scene modes: 'model' = GLB mesh, 'billboard' = 2.5D image plane
     if (!pet3d) pet3d = initPet3D();
@@ -475,7 +905,7 @@ async function refreshCustomSprite() {
       return;
     }
     const ok =
-      res.mode === 'billboard' ? await pet3d.loadBillboard(res.dataUrl) : await pet3d.loadModel(res.dataUrl);
+      res.mode === 'billboard' ? await pet3d.loadBillboard(dataUrl) : await pet3d.loadModel(dataUrl);
     if (!ok) {
       showBubble(window.PetricI18n.t('bubble.modelLoadFail'), { ms: 4000 });
       window.api.setConfig({ skin: 'cat' });
@@ -484,7 +914,7 @@ async function refreshCustomSprite() {
     pet3dActive = true;
     pet3d.setVisible(true);
   } else {
-    customSprite = await buildCustomSprite(res.dataUrl, res.mode || 'single');
+    customSprite = await buildCustomSprite(dataUrl, res.mode || 'single');
     if (!customSprite) {
       showBubble(window.PetricI18n.t('bubble.imageLoadFail'), { ms: 4000 });
       window.api.setConfig({ skin: 'cat' });
@@ -664,6 +1094,8 @@ async function sendChat() {
     const reply = await window.api.aiChat(hist.slice(-12));
     hist.push({ role: 'assistant', content: reply });
     saveHistory(hist);
+    config.statsChats = (config.statsChats || 0) + 1; // interaction stats
+    addAffinity(2); // chatting with the pet makes you closer
     if (chatHistoryEl.classList.contains('hidden')) {
       // If a drag started while waiting, the console is hidden; just refresh the history data
       showChatReply(reply);
@@ -703,6 +1135,34 @@ function playSound() {
   }
 }
 
+/** A gentle two-note chime used by the focus-mode break reminder (Web Audio synthesis). */
+function playChime() {
+  if (!config.soundEnabled) return;
+  try {
+    const AC =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    audioCtx = audioCtx || new AC();
+    const t = audioCtx.currentTime;
+    [660, 880].forEach((freq, i) => {
+      const start = t + i * 0.18;
+      const o = audioCtx!.createOscillator();
+      const g = audioCtx!.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(freq, start);
+      g.gain.setValueAtTime(0.001, start);
+      g.gain.exponentialRampToValueAtTime(0.08, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, start + 0.22);
+      o.connect(g);
+      g.connect(audioCtx!.destination);
+      o.start(start);
+      o.stop(start + 0.24);
+    });
+  } catch {
+    /* stay silent when audio is unavailable */
+  }
+}
+
 // ---------- Interaction ----------
 function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return;
@@ -722,6 +1182,7 @@ function onMouseDown(e: MouseEvent) {
 
   lastActivity = Date.now();
   wake();
+  stopAction(); // a real press interrupts any yawn / stretch / dance
   dragCandidate = true;
   dragMoved = false;
   dragStartScreen = { x: e.screenX, y: e.screenY };
@@ -806,6 +1267,7 @@ function endDrag() {
   const wasDragging = dragging;
   if (wasDragging) {
     setState('idle');
+    addAffinity(1); // picking the pet up and carrying it also warms its heart
     canvas.style.cursor = overPet ? 'grab' : 'default';
   }
   if (dragCandidate || wasDragging) window.api.dragEnd();
@@ -827,7 +1289,24 @@ function handleSingleClick() {
   lastActivity = Date.now();
   setState('click'); // play one jump animation
   playSound();
-  showBubble(rand(window.PetricI18n.tArray('lines')));
+  config.statsClicks = (config.statsClicks || 0) + 1; // interaction stats
+  const leveledUp = addAffinity(1);
+  if (leveledUp) {
+    if (config.affinity >= AFFINITY_MAX) {
+      showBubble(window.PetricI18n.t('affinity.maxed'));
+    } else {
+      showBubble(
+        window.PetricI18n.t('affinity.levelUp', {
+          level: affinityLevelIndex(config.affinity) + 1,
+          name: affinityLevelName(config.affinity),
+        }),
+      );
+    }
+  } else if (config.affinity >= AFFINITY_MAX && Math.random() < 0.3) {
+    showBubble(window.PetricI18n.t('affinity.maxed'));
+  } else {
+    showBubble(rand(window.PetricI18n.tArray('lines')));
+  }
 }
 
 function handleDoubleClick() {
@@ -908,18 +1387,32 @@ chatHistoryClose.addEventListener('click', () => {
 });
 
 // ---------- Applying Config ----------
+/** Zzz particle base color (RGB triple) read from the theme CSS variable */
+let zzzRgb = '122, 96, 178';
+
+/** Apply the UI theme: light = orange-white gradient, dark = the original purple tone. */
+function applyTheme() {
+  document.documentElement.dataset.theme = config.theme;
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--zzz').trim();
+  if (v) zzzRgb = v;
+}
+
 function applyConfig(cfg: AppConfig) {
   const skinChanged = cfg.skin !== config.skin;
   const localeChanged = cfg.locale !== config.locale;
+  const cutoutChanged = cfg.autoCutout !== config.autoCutout || cfg.cutoutTolerance !== config.cutoutTolerance;
   config = cfg;
+  applyTheme();
   if (localeChanged) {
     void applyLocaleTexts();
   }
-  if (skinChanged) {
+  if (skinChanged || (cutoutChanged && config.skin === 'custom')) {
     if (state !== 'idle') setState('idle');
-    // (Re)load the custom appearance when the skin changes
+    // (Re)load the custom appearance when the skin or the cutout settings change
     void refreshCustomSprite();
   }
+  startReminder(); // restart the break-reminder timer when the interval / mode changes
+  renderAffinityBadge(); // keep the hearts badge in sync (incl. changes from the settings panel)
 }
 
 /** Load the locale dictionary from the main process and refresh localized texts. */
@@ -931,6 +1424,7 @@ async function applyLocaleTexts() {
   chatHistoryBtn.title = window.PetricI18n.t('chat.historyBtn');
   const headSpan = chatHistoryEl.querySelector('.chat-history-head span');
   if (headSpan) headSpan.textContent = window.PetricI18n.t('chat.historyTitle');
+  renderAffinityBadge(); // the badge tooltip shows the localized level name
 }
 
 // ---------- Startup ----------

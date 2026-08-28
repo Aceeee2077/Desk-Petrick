@@ -24,23 +24,30 @@
 | :--- | :--- |
 | 🪟 Transparent always-on-top window | 300×300, frameless, always on top, hidden from taskbar, draggable |
 | 🌐 Chinese/English switch | One-click UI language toggle in Settings (中文 / English); speech lines and bubbles follow |
-| 🐱 Pixel-art sprites | 3 procedurally-generated sprite sheets (cat / dog / dango) — original art, no licensing issues |
+| 🐱 Pixel-art sprites | 4 procedurally-generated sprite sheets (cat / dog / dango / robot) — original art, no licensing issues |
 | 🧊 3D model skins | Custom appearance supports GLB 3D models (WebGL rendering + raycast hit testing + procedural animation) |
+| ✂️ Auto cutout | Imported images get their solid / simple background removed automatically — only the subject remains (toggleable, adjustable sensitivity) |
 | 🎞️ Four animation states | `idle` (breathing + blinking) · `walking` (while dragging) · `sleeping` (after 30s idle) · `click` (jump) |
 | 👀 Eye tracking | Eyes follow the cursor on hover; random blinks every ~2–3.8s |
 | 💬 Click dialogue | Single-click plays a jump animation + random speech bubble (customizable) |
 | 🤖 AI chat | Double-click opens a chat input; works with any OpenAI-compatible API (OpenAI / DeepSeek / …); history is stored locally |
 | ⚙️ Settings panel | Skin / animation speed / opacity / auto-launch / sound / AI config / reset position |
 | 🎵 Click sound | Short synthesized "meow" via Web Audio (toggleable) |
+| ❤️ Affinity | Clicking / dragging / chatting raise your bond through 5 levels (Stranger → Best Friend); hearts shown on a corner badge |
+| ⏰ Focus Mode | On by default: reminds you to "Stand up and stretch, boss!" every 40 minutes (configurable 20–90), with a chime and a jump; text follows the UI language |
+| ☀️🌙 Theme switch | Light (orange-white gradient) / Dark (original purple) — the pet bubble, chat box and settings panel switch together |
+| 🎩 Accessories | Procedural pixel hat / scarf / glasses, switched live in Settings (built-in skins) |
+| 🕺 Idle actions | The pet randomly yawns, stretches, scratches and dances while idle — it feels alive |
+| 📊 Interaction stats | Days together, click / chat counts and an affinity growth curve (chart in Settings) |
 | 📍 Position memory | Remembers its position and returns there on restart |
 
 **Quick interactions**
 
 | Action | Effect |
 | :--- | :--- |
-| Left-drag | The pet follows the cursor and plays its walking animation |
-| Single click | Jump animation + random line + sound |
-| Double click | Opens the AI chat input (or the settings panel if AI is disabled) |
+| Left-drag | The pet follows the cursor and plays its walking animation (affinity +1) |
+| Single click | Jump animation + random line + sound (affinity +1; level-ups are announced) |
+| Double click | Opens the AI chat input (or the settings panel if AI is disabled; each chat reply grants affinity +2) |
 | Right-click / tray icon | Settings / AI chat / reset position / quit |
 | `Ctrl + Shift + P` | Open the settings panel |
 | `Esc` | Close the chat input first, then quit the app |
@@ -126,12 +133,18 @@ Artifacts are written to the `release/` directory.
 | Setting | Description |
 | :--- | :--- |
 | Language | 中文 / English one-click toggle (persisted; tray, context menu and speech lines switch too) |
-| Pet type | Cat 🐱 / Dog 🐶 / Dango 👻 — switches instantly |
+| Theme | Light (orange-white gradient) / Dark (original purple) — the pet window and settings panel switch together |
+| Pet type | Cat 🐱 / Dog 🐶 / Dango 👻 / Robot 🤖 — switches instantly |
+| Accessory | None / Hat 🎩 / Scarf 🧣 / Glasses 👓 — procedural pixel art, instant on built-in skins |
+| Auto cutout | Toggle + sensitivity slider (8–60); applies to "Single image" and "2.5D standee" modes |
+| Affinity | Current affinity value and level (clicking / dragging / chatting raise it; persisted) |
+| Interaction stats | Days together, first day, click / chat counts and the affinity growth curve |
 | Animation speed | 0.5x ~ 2x slider, applies to all animation frame rates |
 | Opacity | 0.5 ~ 1.0 slider (whole-window opacity) |
 | Click sound | Web Audio synthesized sound, toggleable |
 | Auto-launch | Based on the native `app.setLoginItemSettings` API |
 | Reset position | Back to the center of the primary display |
+| Focus Mode | Break-reminder toggle + interval (20 / 30 / 40 / 60 / 90 minutes) |
 | AI chat | Enable toggle + Base URL + API Key + model name + test button |
 
 ### 🤖 Configuring AI Chat

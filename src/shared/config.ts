@@ -21,7 +21,19 @@ export const DEFAULT_CONFIG: AppConfig = {
   soundEnabled: true,
   customImageMode: 'single',
   customImagePath: '',
+  autoCutout: true,
+  cutoutTolerance: 25,
   locale: 'zh',
+  theme: 'light',
+  accessory: 'none',
+  affinity: 0,
+  focusMode: true,
+  focusInterval: 40,
+  statsFirstSeen: '',
+  statsDays: [],
+  statsClicks: 0,
+  statsChats: 0,
+  affinityHistory: [],
 };
 
 let cache: AppConfig | null = null;

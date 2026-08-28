@@ -56,6 +56,7 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     applyAutoLaunchFromConfig();
+    recordLaunchStats();
     createPetWindow();
     createTray();
     registerIpc();
@@ -89,6 +90,26 @@ function applyAutoLaunchFromConfig() {
   } catch {
     /* setLoginItemSettings is a no-op on Linux; ignore */
   }
+}
+
+/** Local date as YYYY-MM-DD (used for companion-day tracking) */
+function todayStr(): string {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+/** Record that the app was used today: first-day marker + distinct launch dates (companion days). */
+function recordLaunchStats() {
+  const cfg = loadConfig();
+  const today = todayStr();
+  const days = Array.isArray(cfg.statsDays) ? cfg.statsDays.slice() : [];
+  if (!days.includes(today)) days.push(today);
+  saveConfig({
+    statsFirstSeen: cfg.statsFirstSeen || today,
+    statsDays: days.slice(-366), // keep at most a year of dates
+  });
 }
 
 // ---------- Pet main window ----------
@@ -144,7 +165,10 @@ function createPetWindow() {
     mainWindow.setIcon(nativeImage.createFromPath(path.join(__dirname, '../assets/icon.png')));
   }
 
-  mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+  // The ?smoke=1 query tells the pet renderer to skip auto-played idle actions
+  // (yawn / stretch / scratch / dance), so synthetic hit-test clicks always land.
+  const indexUrl = path.join(__dirname, '../renderer/index.html');
+  mainWindow.loadFile(indexUrl, IS_SMOKE ? { query: { smoke: '1' } } : undefined);
   mainWindow.once('ready-to-show', () => {
     enforcePetWindowSize();
     restorePosition();
@@ -271,8 +295,8 @@ function openSettings() {
     return;
   }
   settingsWindow = new BrowserWindow({
-    width: 440,
-    height: 640,
+    width: 880,
+    height: 680,
     transparent: true,
     frame: false,
     resizable: false,
@@ -463,7 +487,10 @@ function registerIpc() {
     const cfg = saveConfig(patch);
     if (typeof patch.opacity === 'number') applyWindowOpacity();
     if (patch.locale) rebuildTrayMenu(); // tray labels/tooltip follow the UI language
+    // Broadcast to BOTH windows so the settings panel's theme / affinity / focus UI
+    // stays in sync too (it previously only reached the pet window).
     if (mainWindow) mainWindow.webContents.send('config-changed', cfg);
+    if (settingsWindow) settingsWindow.webContents.send('config-changed', cfg);
     return cfg;
   });
 
@@ -583,7 +610,7 @@ function runSmoke() {
         const expectedSend = d.locale === 'en' ? 'Send' : '发送';
         if (
           !d.hasApi ||
-          !['cat', 'dog', 'default', 'custom'].includes(d.skin) ||
+          !['cat', 'dog', 'default', 'robot', 'custom'].includes(d.skin) ||
           !d.hasCanvas ||
           d.probeNaturalWidth !== 128 ||
           d.i18nSend !== expectedSend ||
@@ -823,8 +850,8 @@ async function runScreenshot() {
 
       // 2) Settings-panel screenshot: canvas replica of the panel (DOM capture is unreliable in this session)
       const settingsWin = new BrowserWindow({
-        width: 440,
-        height: 640,
+        width: 880,
+        height: 680,
         show: false,
         frame: false,
         webPreferences: {
@@ -840,7 +867,7 @@ async function runScreenshot() {
       );
       await sReady;
       await new Promise((r) => setTimeout(r, 200));
-      await readCanvasPng(settingsWin, 'settings-shot-canvas', 440, 640);
+      await readCanvasPng(settingsWin, 'settings-shot-canvas', 880, 680);
       fs.renameSync(
         path.join(app.getAppPath(), 'docs', 'screenshots', 'settings-shot-canvas.png'),
         path.join(docsDir, `settings-panel${suffix}.png`),
