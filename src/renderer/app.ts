@@ -708,8 +708,9 @@ function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return;
   // Per-pixel hit: ignore when the cursor is not on the pet (transparent areas pass clicks to the desktop)
   if (!isOverPet(e.clientX, e.clientY)) return;
-  // When the chat input is open: clicking the pet closes it first, so the input doesn't move with the window while dragging
-  if (!chatUiEl.classList.contains('hidden')) {
+  // When the chat console or history overlay is open: clicking the pet closes them first,
+  // so neither travels with the window while dragging
+  if (!chatUiEl.classList.contains('hidden') || !chatHistoryEl.classList.contains('hidden')) {
     closeChat();
   }
   // The second press of a double-click must not start a drag: double-clicks often drift a few
@@ -740,9 +741,9 @@ function onMouseMove(e: MouseEvent) {
     if (dist > 5) {
       dragging = true;
       dragMoved = true;
-      // DOM overlays live inside the same transparent BrowserWindow as the pet. Hide both
-      // kinds before moving that window so they never travel across (or beyond) the screen.
-      if (!chatUiEl.classList.contains('hidden')) closeChat();
+      // DOM overlays live inside the same transparent BrowserWindow as the pet. Hide them all
+      // before moving that window so they never travel across (or beyond) the screen.
+      if (!chatUiEl.classList.contains('hidden') || !chatHistoryEl.classList.contains('hidden')) closeChat();
       else hideBubble();
       setState('walking');
     }
@@ -768,8 +769,10 @@ function onMouseMove(e: MouseEvent) {
     // teleport the window) and to renderer screenX/display-scaling mismatches.
     window.api.dragMove();
   } else {
-    // Hit state: force interactive when the chat input is open; otherwise decide per-pixel
-    const chatOpen = !chatUiEl.classList.contains('hidden');
+    // Hit state: force interactive while the chat console OR the history overlay is open
+    // (otherwise the window would go click-through and the ✕/scroll would stop working);
+    // otherwise decide per-pixel.
+    const chatOpen = !chatUiEl.classList.contains('hidden') || !chatHistoryEl.classList.contains('hidden');
     const over = chatOpen || isOverPet(e.clientX, e.clientY);
     if (over !== overPet) {
       overPet = over;
@@ -871,9 +874,9 @@ window.addEventListener('keydown', (e) => {
     window.api.openSettings();
     return;
   }
-  // Esc: close the chat input first, then quit the app
+  // Esc: close the chat console / history overlay first, then quit the app
   if (e.key === 'Escape') {
-    if (!chatUiEl.classList.contains('hidden')) {
+    if (!chatUiEl.classList.contains('hidden') || !chatHistoryEl.classList.contains('hidden')) {
       closeChat();
     } else {
       window.api.quitApp();

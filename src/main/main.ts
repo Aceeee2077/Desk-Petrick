@@ -975,35 +975,46 @@ async function smokeCheckChatBox() {
     app.exit(1);
     return;
   }
-  // History overlay: 🕘 opens it (console hidden, empty-state message shown), ✕ closes it back
+  // History overlay: 🕘 opens it (console hidden), ✕ closes it back.
+  // While the overlay is open the window must stay interactive (NOT click-through),
+  // otherwise the ✕ button and wheel scrolling would stop working.
   const histState = (await mainWindow.webContents.executeJavaScript(
     `(() => {
       try {
-        const btn = document.getElementById('chat-history-btn');
         const overlay = document.getElementById('chat-history');
         const ui = document.getElementById('chat-ui');
-        const list = document.getElementById('chat-history-list');
-        const before = { btnExists: !!btn, overlayExists: !!overlay, uiHidden: ui.classList.contains('hidden'), overlayHidden: overlay.classList.contains('hidden') };
-        btn.click();
+        document.getElementById('chat-history-btn').click();
         const after = {
           uiHidden: ui.classList.contains('hidden'),
           overlayHidden: overlay.classList.contains('hidden'),
-          emptyMsg: !!list.querySelector('.msg.empty'),
-          listChildren: list.children.length,
+          listChildren: document.getElementById('chat-history-list').children.length,
         };
-        document.getElementById('chat-history-close').click();
-        const closed = overlay.classList.contains('hidden') && !ui.classList.contains('hidden');
-        return JSON.stringify({ before, after, closed });
+        // Move the (synthetic) cursor over a transparent corner while the overlay is open
+        window.dispatchEvent(new MouseEvent('mousemove', { clientX: 10, clientY: 10, bubbles: true }));
+        return JSON.stringify(after);
       } catch (e) {
         return JSON.stringify({ error: String(e) });
       }
     })()`,
   )) as string;
-  console.log('[smoke] history toggle:', histState);
-  const hs = JSON.parse(histState) as { before?: { btnExists: boolean; overlayExists: boolean; uiHidden: boolean; overlayHidden: boolean }; after?: { uiHidden: boolean; overlayHidden: boolean; emptyMsg: boolean; listChildren: number }; closed?: boolean; error?: string };
-  // Accept either the empty state or real messages (the smoke shares the user's localStorage)
-  if (hs.error || !hs.after || !(hs.after.emptyMsg || hs.after.listChildren > 0) || !hs.closed) {
-    console.error('SMOKE_FAIL chat history toggle:', histState);
+  await new Promise((r) => setTimeout(r, 150));
+  const interactiveWhileOpen = petIgnoreMouse === false; // must stay interactive (main-process state)
+  const closed = (await mainWindow.webContents.executeJavaScript(
+    `(() => {
+      document.getElementById('chat-history-close').click();
+      return JSON.stringify({
+        overlayHidden: document.getElementById('chat-history').classList.contains('hidden'),
+        uiVisible: !document.getElementById('chat-ui').classList.contains('hidden'),
+      });
+    })()`,
+  )) as string;
+  console.log('[smoke] history toggle:', histState, '| interactiveWhileOpen=' + interactiveWhileOpen + ' | closed=' + closed);
+  const hs = JSON.parse(histState) as { error?: string; uiHidden?: boolean; overlayHidden?: boolean; listChildren?: number };
+  const cl = JSON.parse(closed) as { overlayHidden: boolean; uiVisible: boolean };
+  // While open: overlay visible (overlayHidden=false), console hidden, window interactive.
+  // After close: overlay hidden, console visible again.
+  if (hs.error || hs.overlayHidden || !hs.uiHidden || !cl.overlayHidden || !cl.uiVisible || !interactiveWhileOpen) {
+    console.error('SMOKE_FAIL chat history toggle:', JSON.stringify({ hs, cl, interactiveWhileOpen }));
     app.exit(1);
     return;
   }
