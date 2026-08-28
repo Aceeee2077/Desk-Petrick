@@ -16,7 +16,6 @@
 ![pet cat preview](./docs/screenshots/pet-cat.png)
 ![settings panel](./docs/screenshots/settings-panel.png)
 
-> 📷 截图占位：把实际截图放到 `docs/screenshots/` 后替换上面的图片路径即可（见文末「演示与截图」）。
 
 ---
 
