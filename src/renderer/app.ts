@@ -17,6 +17,11 @@ const bubbleEl = document.getElementById('bubble') as HTMLDivElement;
 const chatUiEl = document.getElementById('chat-ui') as HTMLDivElement;
 const chatInputEl = document.getElementById('chat-input') as HTMLInputElement;
 const chatSendEl = document.getElementById('chat-send') as HTMLButtonElement;
+const chatReplyEl = document.getElementById('chat-reply') as HTMLDivElement;
+const chatHistoryBtn = document.getElementById('chat-history-btn') as HTMLButtonElement;
+const chatHistoryEl = document.getElementById('chat-history') as HTMLDivElement;
+const chatHistoryList = document.getElementById('chat-history-list') as HTMLDivElement;
+const chatHistoryClose = document.getElementById('chat-history-close') as HTMLButtonElement;
 
 const ctx = canvas.getContext('2d')!;
 
@@ -588,6 +593,33 @@ function saveHistory(h: ChatMessage[]) {
   }
 }
 
+/** Render the latest AI reply (or a status line) INSIDE the chat console, above the input. */
+function showChatReply(text: string, isError = false) {
+  chatReplyEl.textContent = text;
+  chatReplyEl.classList.toggle('err', isError);
+  chatReplyEl.classList.remove('hidden');
+}
+
+/** Rebuild the full history overlay from localStorage. */
+function renderChatHistory() {
+  const hist = loadHistory();
+  chatHistoryList.textContent = '';
+  if (!hist.length) {
+    const empty = document.createElement('div');
+    empty.className = 'msg empty';
+    empty.textContent = window.PetricI18n.t('chat.historyEmpty');
+    chatHistoryList.appendChild(empty);
+    return;
+  }
+  for (const m of hist) {
+    const el = document.createElement('div');
+    el.className = m.role === 'user' ? 'msg user' : 'msg ai';
+    el.textContent = m.content;
+    chatHistoryList.appendChild(el);
+  }
+  chatHistoryList.scrollTop = chatHistoryList.scrollHeight;
+}
+
 function openChat() {
   // The window must stay interactive while the chat input is open (it may currently be click-through)
   if (!overPet) {
@@ -597,14 +629,21 @@ function openChat() {
   }
   // A newly opened chat supersedes any reply that was waiting for a previous drag to end.
   deferredBubble = null;
-  // Hide the speech bubble so the chat box (which sits in the same area, above the pet) doesn't overlap it
+  // Hide the speech bubble so it doesn't overlap the chat console
   hideBubble();
+  // Close any leftover history overlay and show the console
+  chatHistoryEl.classList.add('hidden');
   chatUiEl.classList.remove('hidden');
+  // Preview the last AI reply (if any) inside the console
+  const hist = loadHistory();
+  const lastAi = [...hist].reverse().find((m) => m.role === 'assistant');
+  if (lastAi) showChatReply(lastAi.content);
   chatInputEl.focus();
 }
 
 function closeChat() {
   chatUiEl.classList.add('hidden');
+  chatHistoryEl.classList.add('hidden');
   hideBubble();
 }
 
@@ -616,14 +655,23 @@ async function sendChat() {
   hist.push({ role: 'user', content: text });
   saveHistory(hist);
 
-  showBubble(window.PetricI18n.t('bubble.thinking'), { ms: 0 });
+  // While the chat is open, replies render inside the console (never in the speech bubble),
+  // so they can't be covered by the input or travel with the window during a drag.
+  if (chatHistoryEl.classList.contains('hidden')) {
+    showChatReply(window.PetricI18n.t('bubble.thinking'));
+  }
   try {
     const reply = await window.api.aiChat(hist.slice(-12));
     hist.push({ role: 'assistant', content: reply });
     saveHistory(hist);
-    showBubble(reply, { ms: 6000, typing: true });
+    if (chatHistoryEl.classList.contains('hidden')) {
+      // If a drag started while waiting, the console is hidden; just refresh the history data
+      showChatReply(reply);
+    } else {
+      renderChatHistory(); // history overlay is open: show the exchange there
+    }
   } catch (err) {
-    showBubble('😿 ' + (err instanceof Error ? err.message : String(err)), { ms: 5000 });
+    showChatReply('😿 ' + (err instanceof Error ? err.message : String(err)), true);
   }
 }
 
@@ -844,6 +892,18 @@ chatInputEl.addEventListener('keydown', (e) => {
   }
 });
 
+// Chat history: 🕘 opens the overlay (hiding the console), ✕ closes it back
+chatHistoryBtn.addEventListener('click', () => {
+  renderChatHistory();
+  chatUiEl.classList.add('hidden');
+  chatHistoryEl.classList.remove('hidden');
+});
+chatHistoryClose.addEventListener('click', () => {
+  chatHistoryEl.classList.add('hidden');
+  chatUiEl.classList.remove('hidden');
+  chatInputEl.focus();
+});
+
 // ---------- Applying Config ----------
 function applyConfig(cfg: AppConfig) {
   const skinChanged = cfg.skin !== config.skin;
@@ -865,6 +925,9 @@ async function applyLocaleTexts() {
   window.PetricI18n.setLocaleData(payload.locale, payload.dict);
   chatInputEl.placeholder = window.PetricI18n.t('chat.placeholder');
   chatSendEl.textContent = window.PetricI18n.t('chat.send');
+  chatHistoryBtn.title = window.PetricI18n.t('chat.historyBtn');
+  const headSpan = chatHistoryEl.querySelector('.chat-history-head span');
+  if (headSpan) headSpan.textContent = window.PetricI18n.t('chat.historyTitle');
 }
 
 // ---------- Startup ----------

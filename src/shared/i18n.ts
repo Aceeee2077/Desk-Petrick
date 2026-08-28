@@ -16,6 +16,9 @@ export const zhDict: Record<string, I18nValue> = {
   'bubble.thinking': '💭 思考中…',
   'chat.placeholder': '和宠物说点什么…',
   'chat.send': '发送',
+  'chat.historyTitle': '📜 聊天记录',
+  'chat.historyBtn': '聊天记录',
+  'chat.historyEmpty': '还没有聊天记录，和宠物说句话吧 🐱',
   lines: ['喵～', '别摸我！', '饿了…', '今天也要加油鸭！', '(*^▽^*)', '哼，不许偷看我！', '陪我玩嘛～'],
 
   // Settings panel
@@ -100,6 +103,9 @@ export const enDict: Record<string, I18nValue> = {
   'bubble.thinking': '💭 Thinking…',
   'chat.placeholder': 'Say something to your pet…',
   'chat.send': 'Send',
+  'chat.historyTitle': '📜 Chat History',
+  'chat.historyBtn': 'Chat history',
+  'chat.historyEmpty': 'No chat history yet — say hi to your pet 🐱',
   lines: ['Meow~', 'Don\'t touch me!', 'I\'m hungry…', 'You can do it today!', '(*^▽^*)', 'Hey, don\'t stare!', 'Play with me~'],
 
   // Settings panel
