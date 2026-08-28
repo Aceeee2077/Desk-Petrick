@@ -1,0 +1,38 @@
+appId: com.petric.desktop-pet
+productName: Petric
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/*.ts"
+asar: true
+compression: normal
+
+win:
+  target:
+    - nsis
+  icon: src/assets/icon.ico
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Petric
+
+mac:
+  target:
+    - dmg
+    - zip
+  icon: src/assets/icon.icns
+  category: public.app-category.entertainment
+  darkModeSupport: true
+
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: src/assets/icon.png
+  category: Utility
+  maintainer: Petric Contributors

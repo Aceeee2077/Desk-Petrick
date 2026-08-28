@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; connect-src 'self' data:; worker-src 'self' blob:"
+  />
+  <title>Petric</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <!-- 3D model canvas (behind the 2D canvas; only used in custom 3D model mode) -->
+  <canvas id="pet3d-canvas" width="300" height="300"></canvas>
+
+  <!-- 300x300 transparent 2D canvas: sprite animation + eye tracking + Zzz / shadow -->
+  <canvas id="pet-canvas" width="300" height="300"></canvas>
+
+  <!-- Speech bubble (the little tail pointing at the pet is drawn with CSS ::after) -->
+  <div id="bubble"></div>
+
+  <!-- AI chat input (triggered by double-clicking the pet / right-click menu) -->
+  <div id="chat-ui" class="hidden">
+    <input
+      id="chat-input"
+      type="text"
+      maxlength="200"
+      placeholder="和宠物说点什么…"
+      autocomplete="off"
+      spellcheck="false"
+    />
+    <button id="chat-send">发送</button>
+  </div>
+
+  <!-- Vendored three.js UMD build (MIT) + GLTFLoader, then app scripts -->
+  <script src="../assets/vendor/three.min.js"></script>
+  <script src="../assets/vendor/GLTFLoader.js"></script>
+  <script src="./i18n.js"></script>
+  <script src="./pet3d.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

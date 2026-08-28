@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'"
+  />
+  <title>Petric 设置面板截图</title>
+</head>
+<body>
+  <!-- Only for --screenshot mode: draws the settings panel look with canvas (DOM capture is unreliable in this environment) -->
+  <canvas id="settings-shot-canvas" width="440" height="640"></canvas>
+  <script src="./settings-shot.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; connect-src 'self' data:; worker-src 'self' blob:"
+  />
+  <title>Petric 3D smoke</title>
+</head>
+<body>
+  <!-- Used only by --smoke: verifies the 3D pipeline (WebGL render + GLB load + raycast) -->
+  <canvas id="test3d-canvas" width="300" height="300"></canvas>
+  <script src="../assets/vendor/three.min.js"></script>
+  <script src="../assets/vendor/GLTFLoader.js"></script>
+  <script src="./pet3d.js"></script>
+  <script src="./pet3d-test.js"></script>
+</body>
+</html>

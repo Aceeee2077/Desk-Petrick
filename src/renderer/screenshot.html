@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'"
+  />
+  <title>Petric 截图合成</title>
+</head>
+<body>
+  <!-- Only for --screenshot mode: composites the real sprite onto a mock desktop for README images -->
+  <canvas id="shot-canvas" width="800" height="500"></canvas>
+  <script src="./screenshot.js"></script>
+</body>
+</html>

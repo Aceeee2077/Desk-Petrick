@@ -1,0 +1,329 @@
+# 🐾 Petric · 跨平台桌面宠物
+
+> **中文** | [English](./README-EN.md)
+
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+![Electron](https://img.shields.io/badge/Electron-33-47848F?logo=electron&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-8A2BE2)
+![3D](https://img.shields.io/badge/3D-three.js-000000?logo=three.js&logoColor=white)
+
+![petric badge](./docs/petric-badge.png)
+
+> Electron + TypeScript + HTML5 Canvas 构建的透明置顶桌面宠物（MVP）。
+> 支持 Windows / macOS / Linux，像素风精灵动画、拖拽行走、睡眠、点击互动与 OpenAI 兼容 AI 对话。
+
+![pet cat preview](./docs/screenshots/pet-cat.png)
+![settings panel](./docs/screenshots/settings-panel.png)
+
+> 📷 截图占位：把实际截图放到 `docs/screenshots/` 后替换上面的图片路径即可（见文末「演示与截图」）。
+
+---
+
+## ✨ 功能一览
+
+| 功能 | 说明 |
+| :--- | :--- |
+| 🪟 透明置顶窗口 | 300×300、无边框、始终置顶、不占任务栏、可拖拽移动 |
+| 🌐 中英文切换 | 设置面板一键切换界面语言（中文 / English），台词与气泡随语言变化 |
+| 🐱 像素精灵动画 | 内置猫 / 狗 / 团子三套程序化生成的像素精灵表（原创，无版权问题） |
+| 🧊 3D 模型皮肤 | 自定义外观支持 GLB 3D 模型（WebGL 渲染 + 射线点击判定 + 程序化动画） |
+| 🎞️ 四态动画 | `idle` 待机（呼吸+眨眼）· `walking` 拖拽行走 · `sleeping` 30s 无操作入睡 · `click` 点击跳跃 |
+| 👀 眼睛跟随 | 悬停时眼球随鼠标转动，约 2~3.8s 随机眨眼 |
+| 💬 点击台词 | 单击播放跳跃动画 + 随机气泡台词（可自定义） |
+| 🤖 AI 对话 | 双击弹出对话输入框，支持 OpenAI / DeepSeek 等任意兼容接口，历史保存在本地 |
+| ⚙️ 设置面板 | 皮肤 / 动画速度 / 透明度 / 开机自启 / 音效 / AI 配置 / 重置位置 |
+| 🎵 点击音效 | Web Audio 实时合成的短促“喵”音（可关闭） |
+| 📍 记忆位置 | 记住上次位置，重启后回到原处 |
+
+**操作速查**
+
+| 操作 | 效果 |
+| :--- | :--- |
+| 左键拖拽 | 宠物跟随移动，播放行走动画 |
+| 单击 | 跳跃动画 + 随机台词 + 音效 |
+| 双击 | 打开 AI 对话输入框（未启用 AI 时打开设置） |
+| 右键 / 托盘 | 设置 / AI 对话 / 重置位置 / 退出 |
+| `Ctrl + Shift + P` | 打开设置面板 |
+| `Esc` | 先关闭对话输入框，再退出应用 |
+| 鼠标/键盘无操作 30s | 自动入睡（Zzz 飘动），任何操作唤醒 |
+
+---
+
+## 🚀 快速开始
+
+### 环境要求
+
+- Node.js ≥ 18（开发环境建议 20+）
+- npm（随 Node 附带）
+
+### 安装与运行
+
+```bash
+# 1. 安装依赖（首次会下载 Electron 二进制，约 100MB）
+npm install
+
+# 2. 开发运行（自动生成精灵图 + 编译 TS + 启动）
+npm run dev
+```
+
+启动后，一只像素小猫会出现在屏幕中央。试试拖拽、单击、双击，以及 `Ctrl + Shift + P` 打开设置。
+
+> 💡 **Windows 提示（PowerShell 执行策略）**
+> 如果提示 `无法加载 npm.ps1，因为在此系统上禁止运行脚本`，任选其一：
+>
+> ```powershell
+> # 方式 A：直接用 .cmd 版本（无需改任何设置）
+> npm.cmd run dev
+>
+> # 方式 B：允许当前用户执行脚本（推荐，一次搞定）
+> Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+> npm run dev
+> ```
+>
+> 本项目已内置 `scripts/run-electron.mjs` 启动包装器：它会清除可能被宿主环境
+> 注入的 `ELECTRON_RUN_AS_NODE` 变量（避免 Electron 退化为纯 Node 模式），
+> 并以继承 stdio 方式运行，确保日志与退出码正常透传。
+
+### 常用脚本
+
+| 命令 | 说明 |
+| :--- | :--- |
+| `npm run dev` | 构建并启动开发版本 |
+| `npm run build` | 生成精灵图 + TypeScript 编译 + 拷贝静态资源到 `dist/` |
+| `npm run sprites` | 仅重新生成像素精灵图与图标（`scripts/generate-sprites.mjs`） |
+| `npm run smoke` | 构建并运行冒烟测试（自动检查宠物窗口与设置面板，含深度自检，退出码 0=通过） |
+| `npm run dist` | 打包当前平台安装包（Windows: NSIS / macOS: DMG / Linux: AppImage+deb） |
+| `npm run dist:win` / `dist:mac` / `dist:linux` | 打包指定平台 |
+
+---
+
+## 📦 打包与分发
+
+使用 [electron-builder](https://www.electron.build/)，配置见 `electron-builder.yml`：
+
+- **Windows**：`.exe`（NSIS 安装包，支持自定义安装目录、桌面快捷方式）
+- **macOS**：`.dmg` + `.zip`（未签名，首次打开需右键→打开，或自行配置证书）
+- **Linux**：`.AppImage` + `.deb`
+
+```bash
+npm run dist          # 打包当前平台
+npm run dist:win      # 在 Windows 上打包 Windows 版
+```
+
+产物输出到 `release/` 目录。
+
+> ⚠️ 平台说明：
+> - 跨平台打包（如在 Windows 上打 macOS 包）需要对应平台环境，一般建议在 CI（GitHub Actions）里用各平台 runner 分别构建。
+> - macOS 发布正式版需要 Apple Developer 证书签名与公证；个人使用可不签名。
+> - Windows 首次运行 SmartScreen 可能提示“未知发布者”，点击“更多信息 → 仍要运行”即可（正式分发请配置代码签名证书）。
+
+---
+
+## ⚙️ 设置面板
+
+| 设置项 | 说明 |
+| :--- | :--- |
+| 界面语言 | 中文 / English 一键切换（持久化，托盘/右键菜单/气泡台词同步切换） |
+| 宠物类型 | 猫 🐱 / 狗 🐶 / 团子 👻，实时切换 |
+| 动画速度 | 0.5x ~ 2x 滑块，作用于所有动画帧率 |
+| 透明度 | 0.5 ~ 1.0 滑块（窗口整体透明度） |
+| 点击音效 | Web Audio 合成音，可关闭 |
+| 开机自启 | 基于 `app.setLoginItemSettings` 原生 API |
+| 重置位置 | 回到主屏幕中央 |
+| AI 对话 | 启用开关 + Base URL + API Key + 模型名 + 测试按钮 |
+
+### 🤖 配置 AI 对话
+
+任意 **OpenAI 兼容** 的 `/chat/completions` 接口均可使用：
+
+| 服务商 | API Base URL | 模型示例 |
+| :--- | :--- | :--- |
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| DeepSeek | `https://api.deepseek.com`（自动补 `/v1`） | `deepseek-chat` |
+| Moonshot | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` |
+| Ollama（本地） | `http://localhost:11434/v1` | `qwen2.5` |
+
+填好后点「🧪 测试对话」验证，然后双击宠物开始聊天。
+
+> 🔒 **隐私**：API Key 与对话历史只保存在本机
+> - 配置：`userData/config.json`
+> - 对话历史：渲染进程 `localStorage`
+> 不会上传到除你配置的 AI 服务商以外的任何地方，默认 AI 功能关闭、不产生任何费用。
+
+---
+
+## 🎨 自定义指南
+
+### 0. 🖼️ 用你自己的图片或 3D 模型当宠物（功能不变）
+
+> 内置的猫/狗/团子之外，你还可以用自己的图片或 3D 模型当宠物——拖拽、点击、睡眠、
+> AI 对话、设置等所有功能照常工作（3D 模式下点击判定用射线检测）。
+
+**方式一：应用内选择（推荐，打包后同样可用）**
+设置面板 → 宠物类型选「🖼️ 自定义」→ 「选择文件…」→ 选图片或 `.glb` 模型，实时生效。
+文件保存在 `userData/petric-custom/`，可随时「清除自定义外观」还原。
+
+**方式二：命令行（开发环境便捷）**
+```bash
+# 单张图片（默认）
+node scripts/set-custom.mjs 你的图片.png
+
+# 精灵表（4 行 × 4 列帧动画）
+node scripts/set-custom.mjs 你的精灵表.png --mode sheet
+
+# 3D 模型（.glb，自动识别，无需 --mode）
+node scripts/set-custom.mjs 你的模型.glb
+
+# 还原默认
+node scripts/set-custom.mjs --clear
+```
+
+**三种外观类型**
+
+| 类型 | 说明 |
+| :--- | :--- |
+| 单张图片（single） | 任意 PNG / JPG / WebP / GIF（≤15MB）。整体显示，程序自动做呼吸 / 行走弹跳 / 睡眠变暗 / 点击跳跃动画。GIF 会按自身动画播放。 |
+| 精灵表（sheet） | 4 行 × 4 列、每帧等大的精灵图（行序：idle / walking / sleeping / click），帧大小自动识别，完整保留四态帧动画。 |
+| 3D 模型（model） | GLB 格式（≤60MB）。WebGL 渲染、自动适配大小与光照，程序化待机 / 行走 / 睡眠 / 点击动画，射线点击判定。可用 VRoid Studio 导出或用 Blender 导出 glTF Binary。 |
+| 2.5D 立牌（billboard） | 单张图片放进 3D 场景：朝向光标转动、拖拽时倾斜、带透视投影，看起来立体、本质是平片；点击判定用射线 + 纹理 alpha 精修。 |
+
+> ⚠️ 注意：自定义外观时「眼睛跟随鼠标」自动关闭（内置精灵的眼睛是程序叠加绘制的，
+> 无法在任意图片/模型上定位面部）；其余交互全部保留。透明背景的图片效果最佳。
+> 3D 模式需要显卡支持 WebGL（绝大多数电脑都支持）。
+
+### 1. 替换 / 新增精灵图
+
+内置精灵图由 `scripts/generate-sprites.mjs` **程序化生成**（纯 Node 实现 PNG 编码，无第三方依赖），每张 32×32 帧、按 3 倍整数放大保持像素风。
+
+**方式 A：换用你自己的精灵表（推荐）**
+直接把图片替换为同名文件即可，无需改代码：
+
+```
+src/assets/sprites/cat.png     ← 128×128，4 行×4 列（行序：idle/walking/sleeping/click，帧 32×32）
+```
+
+**方式 B：改生成器新增宠物**
+在 `scripts/generate-sprites.mjs` 中：
+1. 在 `PALETTES` 里加一套配色；
+2. 在 `drawPet()` 里加一个 `kind` 分支（耳朵/尾巴/口鼻造型）；
+3. 渲染进程注册皮肤：`src/renderer/app.ts` 的 `loadSheets()` 与 `src/renderer/settings.ts` 的 `#skin-seg` 按钮；
+4. `npm run sprites` 重新生成。
+
+眼睛、眨眼、Zzz 由渲染进程叠加绘制（这样才支持“眼睛跟随鼠标”），精灵表本身不含眼睛。
+
+### 2. 修改台词
+
+打开 `src/shared/i18n.ts`，编辑 `zhDict` / `enDict` 里的 `lines` 数组（点击台词随界面语言切换）：
+
+```ts
+lines: ['喵～', '别摸我！', '饿了…', '今天也要加油鸭！'],   // zhDict
+lines: ['Meow~', "Don't touch me!", 'I\'m hungry…'],       // enDict
+```
+
+### 3. 调整动画 / 睡眠等参数
+
+- 各状态帧率：`src/renderer/app.ts` 的 `SHEET.states`（与生成器 `STATE_FPS` 对应）
+- 睡眠阈值：`SLEEP_MS`（默认 30000ms）
+- 眨眼节奏：`blinkTimer` 的随机范围
+- 泡泡样式 / 台词框：`src/renderer/styles.css` 的 `#bubble`
+
+---
+
+## 🗂️ 项目结构
+
+```
+petric/
+├── src/
+│   ├── main/
+│   │   ├── main.ts            # 主进程：窗口/托盘/IPC/AI 请求/开机自启
+│   │   └── preload.ts         # contextBridge 暴露 window.api
+│   ├── renderer/
+│   │   ├── index.html         # 宠物窗口页面
+│   │   ├── styles.css         # 宠物窗口样式（透明背景/气泡/对话框）
+│   │   ├── i18n.ts            # 渲染层 i18n（window.PetricI18n，字典来自主进程）
+│   │   ├── app.ts             # Canvas 绘制、动画状态机、拖拽、交互、聊天
+│   │   ├── pet3d.ts           # 3D 模型渲染（three.js UMD + GLTFLoader，射线点击判定）
+│   │   ├── settings.html      # 设置面板页面
+│   │   ├── settings.css       # 毛玻璃设置面板样式
+│   │   └── settings.ts        # 设置面板逻辑
+│   ├── shared/
+│   │   ├── types.ts           # 全局共享类型（三方通用，无运行时）
+│   │   ├── config.ts          # 配置读写（userData/config.json）
+│   │   └── i18n.ts            # 中英文 UI 字符串字典（单一来源）
+│   └── assets/
+│       ├── sprites/           # 生成的精灵表 cat/dog/default.png + sprites.json
+│       ├── models/            # 测试 3D 模型 test-pet.glb
+│       ├── vendor/            # 本地化的 three.js UMD 构建（MIT）
+│       ├── icon.png / icon.ico / icon.icns / tray.png
+├── scripts/
+│   ├── generate-sprites.mjs   # 像素精灵与图标生成器（零依赖 PNG 编码）
+│   ├── copy-vendor.mjs        # 从 node_modules 拷贝 three.js UMD 到 vendor/
+│   ├── make-test-model.mjs    # 生成测试 3D 模型（GLB）
+│   ├── copy-assets.mjs        # 构建时拷贝 html/css/assets 到 dist/
+│   ├── run-electron.mjs       # Electron 启动包装器（清除 ELECTRON_RUN_AS_NODE）
+│   └── set-custom.mjs         # 命令行设置自定义外观（图片 / 精灵表 / 3D 模型）
+├── package.json
+├── tsconfig.json
+├── electron-builder.yml
+├── README.md
+└── README-EN.md
+```
+
+**技术要点**
+
+- 主进程 / 预加载 / 渲染进程全部 TypeScript，`tsc` 编译为 CommonJS（渲染层为无模块单脚本，避免 file:// 下 ES Module 的 CORS 限制）。
+- 渲染进程与主进程仅通过 `window.api`（IPC）通信，`contextIsolation: true` + `sandbox: true`。
+- AI 网络请求放在**主进程**发起，规避浏览器 CORS 限制。
+- 拖拽采用屏幕坐标绝对定位（`screenX/Y` + 窗口位置），无累积漂移。
+- 透明窗口 + `backgroundThrottling: false`，保证 `requestAnimationFrame` 常驻运行。
+- 3D 模式用本地化（vendored）的 **three.js UMD（MIT）** 构建，无需打包器；点击判定用 `THREE.Raycaster` 射线检测替代 2D 像素命中。
+
+---
+
+## 🧪 已知限制（MVP）
+
+- **点击穿透（逐像素命中）**：只有光标落在宠物的**可见像素**上才会触发交互；透明区域点击直接穿透到桌面（Windows 基于 `setIgnoreMouseEvents(forward)` 动态切换；3D 模式用射线检测）。macOS / Linux 不支持 `forward`（开启穿透后收不到事件、宠物会不可达），退化为渲染层命中判定——透明区域不会触发宠物交互，但仍会拦截点击（不会穿透到桌面）。
+- **3D 模式（当前阶段）**：仅支持 GLB；VRM 人形模型（骨骼表情等）属于下一阶段。3D 需要 WebGL 支持；2D/3D 反复切换时可能需重启窗口才能重新初始化 WebGL 上下文。
+- **macOS 透明窗口**：已隐藏 Dock 图标；如需毛玻璃（vibrancy）效果可自行在 `main.ts` 中添加。
+- **未签名打包**：Windows SmartScreen / macOS Gatekeeper 会提示未知开发者。
+- **精灵图数量**：内置 3 套（猫/狗/团子），更多皮肤可参考「自定义指南」。
+
+---
+
+## 📸 演示与截图
+
+```bash
+# 自动生成 README 顶部配图（docs/screenshots/）
+npm run build && electron . --screenshot
+```
+
+- `docs/screenshots/pet-cat.png`：宠物在（模拟）桌面上的效果（真实精灵图合成）
+- `docs/screenshots/settings-panel.png`：设置面板（画布复刻版）
+- `docs/screenshots/demo.gif`：拖拽 / 点击 / 动画切换 / AI 对话演示——在自己电脑上
+  运行应用后用 [ScreenToGif](https://www.screentogif.com/) 录制后放入
+
+> 想用真实桌面截图替换自动生成的配图？直接在 `docs/screenshots/` 覆盖同名文件即可。
+
+---
+
+## 🤝 贡献指南
+
+欢迎任何形式的贡献：
+
+- 🎨 新增精灵图皮肤（遵循 32×32 帧 / 4 行精灵表规范，或扩展生成器）
+- ✨ 新动画状态 / 交互（番茄钟、天气感知、多显示器多宠物等）
+- 🐛 Bug 修复与体验优化
+- 📖 文档与演示
+
+流程：Fork → 新建分支 → 提交 PR。请确保 `npm run build` 通过，并附上修改说明。
+
+---
+
+## 📄 许可证
+
+[MIT](./LICENSE) © Petric Contributors
+
+- 内置精灵图为程序化生成，属于本项目原创资源（CC0 同等宽松）。
+- 3D 渲染使用 [three.js](https://threejs.org/)（MIT，已本地化到 `src/assets/vendor/`）。
+- 若替换第三方精灵图或 3D 模型，请自行确认其许可证（推荐 CC0 / MIT / OGA-BY 3.0 并在 README 注明来源）。

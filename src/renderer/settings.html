@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'"
+  />
+  <title data-i18n="settings.windowTitle">Petric 设置</title>
+  <link rel="stylesheet" href="./settings.css" />
+</head>
+<body>
+  <div class="panel">
+    <!-- Drag region (-webkit-app-region: drag) -->
+    <header class="drag">
+      <div class="title" data-i18n="settings.title">🐾 Petric 设置</div>
+      <button id="btn-close" class="no-drag" title="关闭" data-i18n-title="settings.close">✕</button>
+    </header>
+
+    <div class="body">
+      <!-- UI language -->
+      <section>
+        <h2 data-i18n="settings.language">界面语言</h2>
+        <div class="row">
+          <label data-i18n="settings.language">界面语言</label>
+          <div class="seg" id="locale-seg">
+            <button data-locale="zh" class="active">中文</button>
+            <button data-locale="en">English</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2 data-i18n="settings.petSection">宠物</h2>
+        <div class="row">
+          <label data-i18n="settings.skin">宠物类型</label>
+          <div class="seg" id="skin-seg">
+            <button data-skin="cat" data-i18n="settings.skinCat">🐱 猫</button>
+            <button data-skin="dog" data-i18n="settings.skinDog">🐶 狗</button>
+            <button data-skin="default" data-i18n="settings.skinDango">👻 团子</button>
+            <button data-skin="custom" data-i18n="settings.skinCustom">🖼️ 自定义</button>
+          </div>
+        </div>
+        <!-- Custom appearance controls (only shown when "Custom" is selected) -->
+        <div class="row custom-row" hidden>
+          <label data-i18n="settings.customLabel">自定义外观</label>
+          <button id="btn-pick-image" class="ghost" data-i18n="settings.pickFile">🖼️ 选择文件…</button>
+          <span id="custom-status" class="status"></span>
+        </div>
+        <div class="row custom-row" hidden>
+          <label data-i18n="settings.customType">类型</label>
+          <div class="seg" id="custom-mode-seg">
+            <button data-mode="single" class="active" data-i18n="settings.modeSingle">单张图片</button>
+            <button data-mode="sheet" data-i18n="settings.modeSheet">精灵表</button>
+            <button data-mode="model" data-i18n="settings.modeModel">🧊 3D 模型</button>
+            <button data-mode="billboard" data-i18n="settings.modeBillboard">🧱 2.5D 立牌</button>
+          </div>
+        </div>
+        <div class="row custom-row" hidden>
+          <label></label>
+          <button id="btn-clear-custom" class="ghost" data-i18n="settings.clearCustom">🗑️ 清除自定义外观</button>
+        </div>
+        <p class="hint custom-row" hidden data-i18n-html="settings.customHint"></p>
+        <div class="row">
+          <label><span data-i18n="settings.animSpeed">动画速度</span> <span id="anim-speed-val" class="val">1.0x</span></label>
+          <input type="range" id="anim-speed" min="0.5" max="2" step="0.1" value="1" />
+        </div>
+        <div class="row">
+          <label><span data-i18n="settings.opacity">透明度</span> <span id="opacity-val" class="val">100%</span></label>
+          <input type="range" id="opacity" min="0.5" max="1" step="0.05" value="1" />
+        </div>
+        <div class="row">
+          <label data-i18n="settings.sound">点击音效</label>
+          <label class="switch"><input type="checkbox" id="sound" /><span></span></label>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.autolaunch">开机自启</label>
+          <label class="switch"><input type="checkbox" id="autolaunch" /><span></span></label>
+        </div>
+        <div class="row">
+          <button id="btn-reset" class="ghost" data-i18n="settings.resetPos">🎯 重置位置</button>
+        </div>
+      </section>
+
+      <section>
+        <h2><span data-i18n="settings.aiSection">AI 对话</span> <span class="tag" data-i18n="settings.optional">可选</span></h2>
+        <div class="row">
+          <label data-i18n="settings.aiEnabled">启用 AI 对话</label>
+          <label class="switch"><input type="checkbox" id="ai-enabled" /><span></span></label>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.apiBase">API Base URL</label>
+          <input type="text" id="api-base" placeholder="https://api.openai.com/v1" spellcheck="false" />
+        </div>
+        <div class="row">
+          <label data-i18n="settings.apiKey">API Key</label>
+          <input type="password" id="api-key" placeholder="sk-..." spellcheck="false" />
+        </div>
+        <div class="row">
+          <label data-i18n="settings.model">模型</label>
+          <input type="text" id="model" placeholder="gpt-4o-mini / deepseek-chat" spellcheck="false" />
+        </div>
+        <div class="row">
+          <button id="btn-test-ai" class="ghost" data-i18n="settings.testAi">🧪 测试对话</button>
+          <span id="ai-status" class="status"></span>
+        </div>
+        <p class="hint" data-i18n-html="settings.aiHint"></p>
+      </section>
+    </div>
+  </div>
+
+  <script src="./i18n.js"></script>
+  <script src="./settings.js"></script>
+</body>
+</html>
