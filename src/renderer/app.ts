@@ -9,7 +9,7 @@
 //  - Single click: speech bubble / double click: AI chat (history kept in localStorage)
 //  - Affinity (好感度): clicking / dragging / chatting raise affinity, shown as hearts in a corner badge
 //  - Focus mode (专注模式): while enabled, reminds the user every N minutes to stand up and stretch
-//  - Accessories (装扮系统): procedural pixel hat / scarf / glasses overlaid on built-in skins
+//  - Accessories (装扮系统): procedural pixel hat / scarf / glasses for the robot sheet
 //  - Idle actions (随机小动作): the pet randomly yawns / stretches / scratches / dances while idle
 //  - Hotkeys: Ctrl+Shift+P opens settings; Esc quits the pet
 //
@@ -334,8 +334,19 @@ function isOverPet(clientX: number, clientY: number): boolean {
   return d[3] > 20; // alpha threshold, ignores semi-transparent edges
 }
 
-// Sprite image cache (three skins preloaded, zero-wait switching)
+// Built-in appearance cache (preloaded for zero-wait switching). The first three
+// skins keep their historical IDs for config compatibility, but now use the
+// supplied transparent character art; the robot remains an animated sprite sheet.
 const sheets: Record<string, HTMLImageElement> = {};
+const BUILT_IN_ART: Partial<Record<PetSkin, string>> = {
+  cat: '../assets/sprite-sources/cat.png',
+  dog: '../assets/sprite-sources/fox.png',
+  default: '../assets/sprite-sources/rabbit.png',
+};
+
+function usesBuiltInArt(skin: PetSkin): boolean {
+  return Boolean(BUILT_IN_ART[skin]);
+}
 
 // Click speech lines come from the i18n dictionary ('lines' key, locale-aware);
 // to customize them, edit the lines array in src/shared/i18n.ts.
@@ -352,7 +363,7 @@ function clamp(v: number, min: number, max: number): number {
 function loadSheets() {
   (['cat', 'dog', 'default', 'robot'] as PetSkin[]).forEach((s) => {
     const img = new Image();
-    img.src = `../assets/sprites/${s}.png`;
+    img.src = BUILT_IN_ART[s] ?? `../assets/sprites/${s}.png`;
     sheets[s] = img;
   });
 }
@@ -650,8 +661,9 @@ function draw() {
     drawBuiltInPet();
   }
 
-  // Accessories + eyes only apply to built-in sprites (custom images already contain their face)
-  if (!isCustom) {
+  // Face overlays and frame-calibrated accessories only belong to the procedural
+  // robot sheet. The cat, fox and rabbit art already includes its complete face.
+  if (!isCustom && !usesBuiltInArt(config.skin)) {
     drawAccessory();
     drawEyes(fx ? fx.eyesClosed : false);
     if (fx && fx.mouth > 0) drawYawnMouth(fx.mouth);
@@ -677,10 +689,14 @@ function draw() {
   if (!(pet3dActive && pet3d)) buildHitMap();
 }
 
-/** Draw the built-in sprite sheet (cat/dog/default) */
+/** Draw a built-in appearance (transparent character art or the robot sheet). */
 function drawBuiltInPet() {
   const img = sheets[config.skin];
   if (img && img.complete && img.naturalWidth > 0) {
+    if (usesBuiltInArt(config.skin)) {
+      drawSingleImagePet(img, 160, 150);
+      return;
+    }
     const meta = SHEET.states[state];
     const sx = frameIndex * SHEET.frameW;
     const sy = meta.row * SHEET.frameH;
@@ -729,45 +745,50 @@ function drawCustomPet() {
     ctx.drawImage(cs.img, sx, sy, cs.frameW, cs.frameH, dx, dy, dw, dh);
     currentPetTop = dy;
   } else {
-    // Single-image mode: whole image + procedural pose animation (breathe/walk/sleep/jump)
-    const t = performance.now() / 1000;
-    const iw = cs.img.naturalWidth;
-    const ih = cs.img.naturalHeight;
-    const s = Math.min(140 / iw, 120 / ih); // fit the window, roughly 140x120 max
-    const dw = iw * s;
-    const dh = ih * s;
-    let yOff = 0;
-    let scaleX = 1;
-    let scaleY = 1;
-    let alpha = 1;
-
-    if (state === 'idle') {
-      yOff = Math.sin(t * 2.2) * 2.5; // gentle bobbing
-      scaleY = 1 + Math.sin(t * 2.2 + 1) * 0.02; // breathing
-    } else if (state === 'walking') {
-      yOff = Math.sin(t * 10) * 3; // fast bouncing while dragging
-      scaleX = 1 + Math.sin(t * 10) * 0.03;
-    } else if (state === 'sleeping') {
-      yOff = 3 + Math.sin(t * 1.5) * 1.5; // slow rise and fall
-      scaleX = 0.96;
-      scaleY = 0.92;
-      alpha = 0.82; // darker to suggest falling asleep
-    } else if (state === 'click') {
-      const jump = [-4, -20, -28, -8][frameIndex] ?? 0; // jump trajectory
-      const squash = [0.94, 1.12, 1.06, 0.9][frameIndex] ?? 1; // squash & stretch
-      yOff = jump;
-      scaleY = squash;
-    }
-
-    const dy = 300 - dh - 4 + yOff;
-    currentPetTop = dy;
-    ctx.globalAlpha = alpha;
-    ctx.translate(150, 300 - 4 + yOff);
-    ctx.scale(scaleX, scaleY);
-    ctx.drawImage(cs.img, -dw / 2, -dh, dw, dh);
+    drawSingleImagePet(cs.img, 140, 120);
   }
 
   ctx.restore();
+}
+
+/** Draw one transparent character image with lightweight state animation. */
+function drawSingleImagePet(img: HTMLImageElement, maxWidth: number, maxHeight: number) {
+  const t = performance.now() / 1000;
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  const s = Math.min(maxWidth / iw, maxHeight / ih);
+  const dw = iw * s;
+  const dh = ih * s;
+  let yOff = 0;
+  let scaleX = 1;
+  let scaleY = 1;
+  let alpha = 1;
+
+  if (state === 'idle') {
+    yOff = Math.sin(t * 2.2) * 2.5;
+    scaleY = 1 + Math.sin(t * 2.2 + 1) * 0.02;
+  } else if (state === 'walking') {
+    yOff = Math.sin(t * 10) * 3;
+    scaleX = 1 + Math.sin(t * 10) * 0.03;
+  } else if (state === 'sleeping') {
+    yOff = 3 + Math.sin(t * 1.5) * 1.5;
+    scaleX = 0.96;
+    scaleY = 0.92;
+    alpha = 0.82;
+  } else if (state === 'click') {
+    const jump = [-4, -20, -28, -8][frameIndex] ?? 0;
+    const squash = [0.94, 1.12, 1.06, 0.9][frameIndex] ?? 1;
+    yOff = jump;
+    scaleY = squash;
+  }
+
+  const dy = 300 - dh - 4 + yOff;
+  currentPetTop = dy;
+  ctx.globalAlpha = alpha;
+  ctx.imageSmoothingEnabled = false;
+  ctx.translate(150, 300 - 4 + yOff);
+  ctx.scale(scaleX, scaleY);
+  ctx.drawImage(img, -dw / 2, -dh, dw, dh);
 }
 
 // ---------- Auto cutout (自动抠图) ----------
@@ -893,7 +914,8 @@ async function refreshCustomSprite() {
   }
 
   // Auto cutout applies to flat image modes (single / billboard), not sheets or 3D models
-  const canCutout = config.autoCutout && (res.mode === 'single' || res.mode === 'billboard');
+  const canCutout =
+    config.autoCutout && !res.cutoutApplied && (res.mode === 'single' || res.mode === 'billboard');
   const dataUrl = canCutout ? await cutoutBackground(res.dataUrl) : res.dataUrl;
 
   if (res.mode === 'model' || res.mode === 'billboard') {

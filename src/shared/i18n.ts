@@ -49,8 +49,8 @@ export const zhDict: Record<string, I18nValue> = {
   'settings.petSection': '宠物',
   'settings.skin': '宠物类型',
   'settings.skinCat': '🐱 猫',
-  'settings.skinDog': '🐶 狗',
-  'settings.skinDango': '👻 团子',
+  'settings.skinDog': '🦊 狐狸',
+  'settings.skinDango': '🐰 兔子',
   'settings.skinRobot': '🤖 机器人',
   'settings.skinCustom': '🖼️ 自定义',
   'settings.accessory': '配饰',
@@ -74,9 +74,9 @@ export const zhDict: Record<string, I18nValue> = {
   'settings.modeBillboard': '🧱 2.5D 立牌',
   'settings.clearCustom': '🗑️ 清除自定义外观',
   'settings.cutout': '自动抠图',
-  'settings.cutoutTolerance': '抠图灵敏度',
+  'settings.cutoutTolerance': '抠图强度',
   'settings.cutoutHint':
-    '开启后自动移除纯色 / 简单背景，只保留主体（适合白底或纯色背景的照片，复杂背景建议手动处理）。仅对「单张图片」和「2.5D 立牌」生效。',
+    '开启后由本地 AI 自动识别人、宠物或主要元素，并保存为透明 PNG；图片不会上传。强度越高，背景清理越彻底。仅对「单张图片」和「2.5D 立牌」生效。',
   'settings.customHint':
     '支持图片 PNG / JPG / WebP / GIF（≤15MB）与 3D 模型 GLB（≤60MB）。<br/>「单张图片」：整体显示，程序自动做呼吸 / 行走 / 睡眠 / 跳跃动画；<br/>「精灵表」：需要 4 行 × 4 列、行序 idle / walking / sleeping / click，每帧等大；<br/>「3D 模型」：GLB 格式，程序自动适配大小并做待机 / 行走 / 睡眠 / 点击动画，点击判定用射线检测；<br/>「2.5D 立牌」：单张图片放进 3D 场景，朝向光标转动、拖拽倾斜，看起来立体、本质是平片。',
   'settings.animSpeed': '动画速度',
@@ -98,8 +98,9 @@ export const zhDict: Record<string, I18nValue> = {
   'settings.testAi': '🧪 测试对话',
   'settings.aiHint':
     '支持任何 OpenAI 兼容接口：OpenAI、DeepSeek、Moonshot、Ollama 等。<br/>API Key 仅保存在本机 userData/config.json，不会上传到任何地方。',
-  'settings.choosing': '选择中…',
+  'settings.choosing': '选择并识别主体中…',
   'settings.applied': '✅ 已应用',
+  'settings.cutoutApplied': '✅ AI 抠图完成并应用',
   'settings.cancelled': '已取消选择',
   'settings.cleared': '已清除',
   'settings.requesting': '请求中…',
@@ -130,6 +131,8 @@ export const zhDict: Record<string, I18nValue> = {
   'dialog.unsupportedFormat': '不支持的格式',
   'dialog.copyFailed': '复制文件失败',
   'dialog.readFailed': '读取自定义外观失败',
+  'dialog.cutoutFailed': '没有识别到清晰主体，抠图失败；可关闭自动抠图后导入原图',
+  'dialog.fileTooLarge': '自定义外观文件过大（超过 60MB）',
 };
 
 export const enDict: Record<string, I18nValue> = {
@@ -176,8 +179,8 @@ export const enDict: Record<string, I18nValue> = {
   'settings.petSection': 'Pet',
   'settings.skin': 'Pet type',
   'settings.skinCat': '🐱 Cat',
-  'settings.skinDog': '🐶 Dog',
-  'settings.skinDango': '👻 Dango',
+  'settings.skinDog': '🦊 Fox',
+  'settings.skinDango': '🐰 Rabbit',
   'settings.skinRobot': '🤖 Robot',
   'settings.skinCustom': '🖼️ Custom',
   'settings.accessory': 'Accessory',
@@ -201,9 +204,9 @@ export const enDict: Record<string, I18nValue> = {
   'settings.modeBillboard': '🧱 2.5D standee',
   'settings.clearCustom': '🗑️ Clear custom appearance',
   'settings.cutout': 'Auto cutout',
-  'settings.cutoutTolerance': 'Cutout sensitivity',
+  'settings.cutoutTolerance': 'Cutout strength',
   'settings.cutoutHint':
-    'When on, solid / simple backgrounds are removed automatically so only the subject remains (best for white or plain backgrounds; complex ones may need manual editing). Applies to "Single image" and "2.5D standee" only.',
+    'Local AI identifies a person, pet, or main object and saves it as a transparent PNG; the image is never uploaded. Higher strength removes more background. Applies to "Single image" and "2.5D standee" only.',
   'settings.customHint':
     'Supports images PNG / JPG / WebP / GIF (≤15MB) and 3D models GLB (≤60MB).<br/>"Single image": shown as-is with procedural breathing / walking / sleeping / click animation.<br/>"Sprite sheet": 4 rows × 4 columns, row order idle / walking / sleeping / click, equal frames.<br/>"3D model": GLB format, auto-fitted size with procedural idle / walking / sleeping / click animation; hit testing uses raycasting.<br/>"2.5D standee": a single image placed in the 3D scene — it turns toward the cursor and leans while dragging, so it looks 3D while staying a flat plane.',
   'settings.animSpeed': 'Animation speed',
@@ -225,8 +228,9 @@ export const enDict: Record<string, I18nValue> = {
   'settings.testAi': '🧪 Test Chat',
   'settings.aiHint':
     'Works with any OpenAI-compatible API: OpenAI, DeepSeek, Moonshot, Ollama, etc.<br/>Your API Key is stored only on this machine (userData/config.json) and is never uploaded anywhere.',
-  'settings.choosing': 'Choosing…',
+  'settings.choosing': 'Choosing and detecting subject…',
   'settings.applied': '✅ Applied',
+  'settings.cutoutApplied': '✅ AI cutout applied',
   'settings.cancelled': 'Selection cancelled',
   'settings.cleared': 'Cleared',
   'settings.requesting': 'Requesting…',
@@ -257,6 +261,8 @@ export const enDict: Record<string, I18nValue> = {
   'dialog.unsupportedFormat': 'Unsupported file format',
   'dialog.copyFailed': 'Failed to copy the file',
   'dialog.readFailed': 'Failed to read the custom appearance',
+  'dialog.cutoutFailed': 'No clear subject was detected. Turn off Auto cutout to import the original image.',
+  'dialog.fileTooLarge': 'Custom appearance is too large (over 60MB)',
 };
 
 export function getDict(locale: Locale): Record<string, I18nValue> {

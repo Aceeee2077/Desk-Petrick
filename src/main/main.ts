@@ -9,6 +9,7 @@ import * as path from 'path';
 import { DEFAULT_CONFIG, loadConfig, saveConfig } from '../shared/config';
 import { encodePng } from '../shared/png';
 import { getDict, makeT } from '../shared/i18n';
+import { removeImageBackground } from './background-removal';
 
 /** Translate a key using the current persisted locale (re-evaluated per call, so a locale switch takes effect immediately). */
 function t(key: string, params?: Record<string, string | number>): string | I18nValue {
@@ -380,6 +381,98 @@ function customDir(): string {
   return path.join(app.getPath('userData'), 'petric-custom');
 }
 
+const CUSTOM_META = 'custom-meta.json';
+
+interface CustomMeta {
+  sourceMtimeMs: number;
+  autoCutout: boolean;
+  sensitivity: number;
+  mode: CustomImageMode;
+  cutoutApplied: boolean;
+}
+
+function findUserCustomFiles(prefix: 'custom' | 'source'): string[] {
+  const found: string[] = [];
+  for (const ext of CUSTOM_IMAGE_EXT) {
+    const p = path.join(customDir(), prefix + ext);
+    try {
+      if (fs.statSync(p).isFile()) found.push(p);
+    } catch {
+      /* Skip if it does not exist */
+    }
+  }
+  return found;
+}
+
+function removeUserCustomFiles(prefix: 'custom' | 'source'): void {
+  for (const p of findUserCustomFiles(prefix)) {
+    try {
+      fs.unlinkSync(p);
+    } catch {
+      /* Ignore */
+    }
+  }
+}
+
+function readCustomMeta(): CustomMeta | null {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(customDir(), CUSTOM_META), 'utf8')) as CustomMeta;
+  } catch {
+    return null;
+  }
+}
+
+function writeCustomMeta(meta: CustomMeta): void {
+  fs.writeFileSync(path.join(customDir(), CUSTOM_META), JSON.stringify(meta));
+}
+
+async function ensureCustomOutput(): Promise<CustomMeta | null> {
+  const source = findUserCustomFiles('source')[0];
+  if (!source) return readCustomMeta();
+
+  const cfg = loadConfig();
+  const ext = path.extname(source).toLowerCase();
+  const mode: CustomImageMode = ext === '.glb' ? 'model' : cfg.customImageMode;
+  const sourceMtimeMs = fs.statSync(source).mtimeMs;
+  const wantsCutout = cfg.autoCutout && (mode === 'single' || mode === 'billboard') && ext !== '.glb';
+  const expected: CustomMeta = {
+    sourceMtimeMs,
+    autoCutout: wantsCutout,
+    sensitivity: cfg.cutoutTolerance,
+    mode,
+    cutoutApplied: wantsCutout,
+  };
+  const current = readCustomMeta();
+  const active = findUserCustomFiles('custom')[0];
+  if (active && current && JSON.stringify(current) === JSON.stringify(expected)) return current;
+
+  const targetExt = wantsCutout ? '.png' : ext;
+  const target = path.join(customDir(), 'custom' + targetExt);
+  if (wantsCutout) {
+    await removeImageBackground(source, target, cfg.cutoutTolerance);
+  } else {
+    const temporary = target + '.tmp';
+    fs.copyFileSync(source, temporary);
+    try {
+      fs.unlinkSync(target);
+    } catch {
+      /* The first import has no previous output. */
+    }
+    fs.renameSync(temporary, target);
+  }
+  for (const old of findUserCustomFiles('custom')) {
+    if (old !== target) {
+      try {
+        fs.unlinkSync(old);
+      } catch {
+        /* Ignore */
+      }
+    }
+  }
+  writeCustomMeta(expected);
+  return expected;
+}
+
 /** Find the active custom image: userData first, then project src/assets/sprites/custom.* (dev scenario) */
 function findCustomImageFiles(): string[] {
   const candidates = [customDir(), path.join(app.getAppPath(), 'src', 'assets', 'sprites')];
@@ -414,6 +507,13 @@ function mimeForExt(ext: string): string {
 }
 
 async function getCustomImage(): Promise<CustomImageResult> {
+  let meta: CustomMeta | null = null;
+  try {
+    meta = await ensureCustomOutput();
+  } catch (err) {
+    console.error('[custom] background removal failed:', err);
+    return { ok: false, error: ts('dialog.cutoutFailed') };
+  }
   const files = findCustomImageFiles();
   if (!files.length) return { ok: false };
   const p = files[0];
@@ -431,6 +531,7 @@ async function getCustomImage(): Promise<CustomImageResult> {
       dataUrl: `data:${mime};base64,${buf.toString('base64')}`,
       mode,
       path: p,
+      cutoutApplied: meta?.cutoutApplied ?? false,
     };
   } catch {
     return { ok: false, error: ts('dialog.readFailed') };
@@ -456,7 +557,17 @@ async function pickCustomImage(): Promise<CustomImageResult> {
   try {
     const dir = customDir();
     fs.mkdirSync(dir, { recursive: true });
-    fs.copyFileSync(src, path.join(dir, 'custom' + ext));
+    if (fs.statSync(src).size > MAX_CUSTOM_IMAGE) {
+      return { ok: false, error: ts('dialog.fileTooLarge') };
+    }
+    removeUserCustomFiles('source');
+    removeUserCustomFiles('custom');
+    try {
+      fs.unlinkSync(path.join(dir, CUSTOM_META));
+    } catch {
+      /* Ignore */
+    }
+    fs.copyFileSync(src, path.join(dir, 'source' + ext));
     return getCustomImage();
   } catch {
     return { ok: false, error: ts('dialog.copyFailed') };
@@ -475,6 +586,19 @@ function clearCustomImage(): boolean {
         /* Ignore */
       }
     }
+  }
+  for (const p of findUserCustomFiles('source')) {
+    try {
+      fs.unlinkSync(p);
+      removed = true;
+    } catch {
+      /* Ignore */
+    }
+  }
+  try {
+    fs.unlinkSync(path.join(customDir(), CUSTOM_META));
+  } catch {
+    /* Ignore */
   }
   return removed;
 }

@@ -43,8 +43,8 @@
           <label data-i18n="settings.skin">宠物类型</label>
           <div class="seg" id="skin-seg">
             <button data-skin="cat" data-i18n="settings.skinCat">🐱 猫</button>
-            <button data-skin="dog" data-i18n="settings.skinDog">🐶 狗</button>
-            <button data-skin="default" data-i18n="settings.skinDango">👻 团子</button>
+            <button data-skin="dog" data-i18n="settings.skinDog">🦊 狐狸</button>
+            <button data-skin="default" data-i18n="settings.skinDango">🐰 兔子</button>
             <button data-skin="robot" data-i18n="settings.skinRobot">🤖 机器人</button>
             <button data-skin="custom" data-i18n="settings.skinCustom">🖼️ 自定义</button>
           </div>
@@ -54,8 +54,8 @@
           <label data-i18n="affinity.title">好感度</label>
           <span id="affinity-display" class="val"></span>
         </div>
-        <!-- Procedural pixel accessory (built-in skins only) -->
-        <div class="row">
+        <!-- Procedural pixel accessory (the generated robot sheet only) -->
+        <div class="row" id="accessory-row">
           <label data-i18n="settings.accessory">配饰</label>
           <div class="seg" id="accessory-seg">
             <button data-accessory="none" class="active" data-i18n="settings.accessoryNone">无</button>
@@ -84,7 +84,7 @@
           <label class="switch"><input type="checkbox" id="cutout" /><span></span></label>
         </div>
         <div class="row custom-row" hidden>
-          <label><span data-i18n="settings.cutoutTolerance">抠图灵敏度</span> <span id="cutout-tol-val" class="val">25</span></label>
+          <label><span data-i18n="settings.cutoutTolerance">抠图强度</span> <span id="cutout-tol-val" class="val">25</span></label>
           <input type="range" id="cutout-tol" min="8" max="60" step="1" value="25" />
         </div>
         <p class="hint custom-row" hidden data-i18n-html="settings.cutoutHint"></p>

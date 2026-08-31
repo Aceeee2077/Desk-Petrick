@@ -191,6 +191,7 @@ async function initSettings() {
   const accessoryButtons = Array.from(
     document.querySelectorAll<HTMLButtonElement>('#accessory-seg button'),
   );
+  const accessoryRow = $<HTMLElement>('accessory-row');
   affinityDisplayEl = $<HTMLSpanElement>('affinity-display');
 
   // Show/hide the custom appearance controls
@@ -207,6 +208,7 @@ async function initSettings() {
   skinButtons.forEach((b) => b.classList.toggle('active', b.dataset.skin === cfg.skin));
   customModeButtons.forEach((b) => b.classList.toggle('active', b.dataset.mode === cfg.customImageMode));
   setCustomRows(cfg.skin === 'custom');
+  accessoryRow.hidden = cfg.skin !== 'robot';
   cutoutEl.checked = cfg.autoCutout;
   cutoutTolEl.value = String(cfg.cutoutTolerance);
   cutoutTolValEl.textContent = String(cfg.cutoutTolerance);
@@ -258,6 +260,7 @@ async function initSettings() {
       skinButtons.forEach((x) => x.classList.remove('active'));
       b.classList.add('active');
       setCustomRows(b.dataset.skin === 'custom');
+      accessoryRow.hidden = b.dataset.skin !== 'robot';
       window.api.setConfig({ skin: b.dataset.skin as PetSkin });
     });
   });
@@ -273,7 +276,9 @@ async function initSettings() {
         customImagePath: r.path || '',
         customImageMode: selectedCustomMode(),
       });
-      customStatusEl.textContent = window.PetricI18n.t('settings.applied');
+      customStatusEl.textContent = window.PetricI18n.t(
+        r.cutoutApplied ? 'settings.cutoutApplied' : 'settings.applied',
+      );
     } else {
       customStatusEl.classList.add('err');
       customStatusEl.textContent = r.error || window.PetricI18n.t('settings.cancelled');
@@ -310,6 +315,7 @@ async function initSettings() {
     await window.api.setConfig({ skin: 'cat', customImagePath: '' });
     skinButtons.forEach((x) => x.classList.toggle('active', x.dataset.skin === 'cat'));
     setCustomRows(false);
+    accessoryRow.hidden = true;
     customStatusEl.textContent = window.PetricI18n.t('settings.cleared');
   });
 
@@ -340,7 +346,7 @@ async function initSettings() {
     window.api.setConfig({ model: modelEl.value.trim() || 'gpt-4o-mini' }),
   );
 
-  // Accessory (procedural pixel accessory for built-in skins)
+  // Accessory (procedural pixel accessory for the robot sheet)
   accessoryButtons.forEach((b) => {
     b.addEventListener('click', () => {
       accessoryButtons.forEach((x) => x.classList.remove('active'));

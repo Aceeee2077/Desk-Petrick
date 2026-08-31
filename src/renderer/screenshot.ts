@@ -97,24 +97,27 @@ shotWindow.__drawPetShot = (locale: Locale, dict: Record<string, I18nValue>) => 
     sctx.fill();
   }
 
-  // Pet (bottom-center, 32x32 frame x 3 = 96x96)
-  const petX = 400 - 48;
-  const petY = 458 - 96 - 6;
-
+  // Pet (bottom-center): the built-in cat now renders the transparent character art
+  // from sprite-sources (mirrors the app's drawSingleImagePet fitting).
   const img = new Image();
-  img.src = '../assets/sprites/cat.png';
+  img.src = '../assets/sprite-sources/cat.png';
   img.onload = () => {
     // Shadow under the feet
     sctx.fillStyle = 'rgba(0,0,0,0.28)';
     sctx.beginPath();
     sctx.ellipse(400, 456, 40, 7, 0, 0, Math.PI * 2);
     sctx.fill();
-    // idle frame 0 (real sprite)
+    // Fit to the same bounds the pet window uses (160x150), bottom-anchored
+    const iw = img.naturalWidth;
+    const ih = img.naturalHeight;
+    const s = Math.min(160 / iw, 150 / ih);
+    const dw = iw * s;
+    const dh = ih * s;
+    const petX = 400 - dw / 2;
+    const petY = 456 - dh;
     sctx.imageSmoothingEnabled = false;
-    sctx.drawImage(img, 0, 0, 32, 32, petX, petY, 96, 96);
-    // Eyes
-    drawEye(petX + 11.5 * 3, petY + 13.2 * 3);
-    drawEye(petX + 20.5 * 3, petY + 13.2 * 3);
+    sctx.drawImage(img, petX, petY, dw, dh);
+    // The character art already contains its face, so no eye overlay is drawn
     // Bubble (localized)
     drawBubble(T('bubble.greeting'), 400, petY + 2);
     console.log('SCREENSHOT_READY');

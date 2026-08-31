@@ -7,7 +7,7 @@
 // deliberately avoided here so all three sides can use them directly.
 // ============================================================================
 
-/** Pet skin (cat/dog/default/robot are built-in sprite sheets; custom is a custom image) */
+/** Pet skin (legacy IDs dog/default now display the built-in fox/rabbit art). */
 type PetSkin = 'cat' | 'dog' | 'default' | 'robot' | 'custom';
 
 /** UI language */
@@ -16,7 +16,7 @@ type Locale = 'zh' | 'en';
 /** UI theme: light = orange-white gradient, dark = the original purple tone */
 type Theme = 'light' | 'dark';
 
-/** Procedural pixel accessory worn by built-in sprite pets */
+/** Procedural pixel accessory worn by the generated robot sprite. */
 type Accessory = 'none' | 'hat' | 'scarf' | 'glasses';
 
 /** One point of the daily affinity growth history */
@@ -92,6 +92,8 @@ interface CustomImageResult {
   path?: string;
   /** Failure reason */
   error?: string;
+  /** The stored raster has already been converted to a transparent cutout. */
+  cutoutApplied?: boolean;
 }
 
 /** App configuration (persisted to userData/config.json) */

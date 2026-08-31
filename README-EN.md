@@ -24,11 +24,11 @@
 | :--- | :--- |
 | 🪟 Transparent always-on-top window | 300×300, frameless, always on top, hidden from taskbar, draggable |
 | 🌐 Chinese/English switch | One-click UI language toggle in Settings (中文 / English); speech lines and bubbles follow |
-| 🐱 Pixel-art sprites | 4 procedurally-generated sprite sheets (cat / dog / dango / robot) — original art, no licensing issues |
+| 🐱 Animated pixel pets | Built-in transparent cat / fox / rabbit art plus a robot sprite sheet, all with four procedural states |
 | 🧊 3D model skins | Custom appearance supports GLB 3D models (WebGL rendering + raycast hit testing + procedural animation) |
-| ✂️ Auto cutout | Imported images get their solid / simple background removed automatically — only the subject remains (toggleable, adjustable sensitivity) |
+| ✂️ Local AI cutout | Detects a person, pet, or main object and creates a transparent PNG locally (no upload, toggleable, adjustable strength) |
 | 🎞️ Four animation states | `idle` (breathing + blinking) · `walking` (while dragging) · `sleeping` (after 30s idle) · `click` (jump) |
-| 👀 Eye tracking | Eyes follow the cursor on hover; random blinks every ~2–3.8s |
+| 👀 Eye tracking | The robot skin follows the cursor and blinks randomly every ~2–3.8s |
 | 💬 Click dialogue | Single-click plays a jump animation + random speech bubble (customizable) |
 | 🤖 AI chat | Double-click opens a chat input; works with any OpenAI-compatible API (OpenAI / DeepSeek / …); history is stored locally |
 | ⚙️ Settings panel | Skin / animation speed / opacity / auto-launch / sound / AI config / reset position |
@@ -36,7 +36,7 @@
 | ❤️ Affinity | Clicking / dragging / chatting raise your bond through 5 levels (Stranger → Best Friend); hearts shown on a corner badge |
 | ⏰ Focus Mode | On by default: reminds you to "Stand up and stretch, boss!" every 40 minutes (configurable 20–90), with a chime and a jump; text follows the UI language |
 | ☀️🌙 Theme switch | Light (orange-white gradient) / Dark (original purple) — the pet bubble, chat box and settings panel switch together |
-| 🎩 Accessories | Procedural pixel hat / scarf / glasses, switched live in Settings (built-in skins) |
+| 🎩 Accessories | Procedural pixel hat / scarf / glasses for the robot skin |
 | 🕺 Idle actions | The pet randomly yawns, stretches, scratches and dances while idle — it feels alive |
 | 📊 Interaction stats | Days together, click / chat counts and an affinity growth curve (chart in Settings) |
 | 📍 Position memory | Remembers its position and returns there on restart |
@@ -134,9 +134,9 @@ Artifacts are written to the `release/` directory.
 | :--- | :--- |
 | Language | 中文 / English one-click toggle (persisted; tray, context menu and speech lines switch too) |
 | Theme | Light (orange-white gradient) / Dark (original purple) — the pet window and settings panel switch together |
-| Pet type | Cat 🐱 / Dog 🐶 / Dango 👻 / Robot 🤖 — switches instantly |
-| Accessory | None / Hat 🎩 / Scarf 🧣 / Glasses 👓 — procedural pixel art, instant on built-in skins |
-| Auto cutout | Toggle + sensitivity slider (8–60); applies to "Single image" and "2.5D standee" modes |
+| Pet type | Cat 🐱 / Fox 🦊 / Rabbit 🐰 / Robot 🤖 — switches instantly |
+| Accessory | None / Hat 🎩 / Scarf 🧣 / Glasses 👓 — procedural pixel art shown for the robot skin |
+| Auto cutout | Local U-2-Netp subject segmentation for complex photo backgrounds; strength slider 8–60; applies to "Single image" and "2.5D standee" modes |
 | Affinity | Current affinity value and level (clicking / dragging / chatting raise it; persisted) |
 | Interaction stats | Days together, first day, click / chat counts and the affinity growth curve |
 | Animation speed | 0.5x ~ 2x slider, applies to all animation frame rates |
@@ -171,7 +171,7 @@ Fill in the values, hit "🧪 Test Chat" to verify, then double-click the pet to
 
 ### 0. 🖼️ Use Your Own Image or 3D Model as the Pet
 
-> Besides the built-in cat/dog/dango, you can use any image or 3D model as your pet — dragging,
+> Besides the built-in cat/fox/rabbit, you can use any image or 3D model as your pet — dragging,
 > clicking, sleeping, AI chat, and settings all keep working (3D mode uses raycast hit testing).
 
 **Way 1: In-app (recommended, works in packaged builds too)**
@@ -203,20 +203,21 @@ node scripts/set-custom.mjs --clear
 | 2.5D standee | A single image placed in the 3D scene: it turns toward the cursor and leans while dragging, with real perspective — looks 3D while staying a flat plane; hit testing uses raycast + texture-alpha refinement. |
 
 > ⚠️ Note: with a custom image or model, "eye tracking" is disabled automatically (the built-in
-> eyes are drawn by the renderer and can't be positioned on arbitrary assets); all other
+> robot eyes are drawn by the renderer and can't be positioned on arbitrary assets); all other
 > interactions remain. Images with transparent backgrounds look best. 3D mode requires WebGL
 > support (available on virtually all machines).
 
 ### 1. Replacing / Adding Sprite Sheets
 
-The built-in sprites are **procedurally generated** by `scripts/generate-sprites.mjs`
-(pure Node PNG encoding, no third-party dependencies): 32×32 frames scaled 3× for crisp pixel art.
+The transparent cat, fox and rabbit art lives in `src/assets/sprite-sources/` and receives
+procedural breathing, walking, sleeping and click motion. The robot sheet is generated by
+`scripts/generate-sprites.mjs`.
 
 **Option A: swap in your own sheet (recommended)**
 Replace the file with the same name — no code changes needed:
 
 ```
-src/assets/sprites/cat.png     ← 128×128, 4 rows × 4 columns (idle/walking/sleeping/click, 32×32 frames)
+src/assets/sprite-sources/cat.png     ← single character image with a transparent background
 ```
 
 **Option B: extend the generator for a new pet**
@@ -268,7 +269,8 @@ petric/
 │   │   ├── config.ts          # Config read/write (userData/config.json)
 │   │   └── i18n.ts            # Chinese/English UI string dictionaries (single source)
 │   └── assets/
-│       ├── sprites/           # Generated sheets cat/dog/default.png + sprites.json
+│       ├── sprite-sources/    # Built-in transparent cat / fox / rabbit art
+│       ├── sprites/           # Generated robot sheet and compatibility assets
 │       ├── models/            # Test 3D model test-pet.glb
 │       ├── vendor/            # Vendored three.js UMD build (MIT)
 │       ├── icon.png / icon.ico / icon.icns / tray.png
@@ -313,7 +315,7 @@ petric/
   needed to re-initialize the WebGL context.
 - **macOS transparent window**: the Dock icon is hidden; add vibrancy in `main.ts` if you want a frosted-glass effect.
 - **Unsigned packages**: Windows SmartScreen / macOS Gatekeeper will warn about the unknown developer.
-- **Sprite count**: 3 built-in skins (cat/dog/dango); more skins via the Customization Guide.
+- **Built-in appearances**: cat / fox / rabbit / robot; add more via the Customization Guide.
 
 ---
 
@@ -352,7 +354,7 @@ See [CONTRIBUTING.md](./.github/CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](./.git
 
 [MIT](./LICENSE) © Petric Contributors
 
-- Built-in sprites are procedurally generated and original to this project (CC0-equivalent).
+- The bundled cat / fox / rabbit art is distributed with this repository; the robot sprite is procedurally generated by the project.
 - 3D rendering uses [three.js](https://threejs.org/) (MIT, vendored into `src/assets/vendor/`).
 - If you replace them with third-party art or models, verify their license yourself
   (CC0 / MIT / OGA-BY 3.0 recommended, and credit the source in the README).
