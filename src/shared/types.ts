@@ -146,6 +146,27 @@ interface AppConfig {
   statsChats: number;
   /** Affinity growth history (one snapshot per interaction day, newest last) */
   affinityHistory: AffinityPoint[];
+  /** Proactive chat: the pet greets you after 10 minutes of inactivity */
+  greetEnabled: boolean;
+  /** Weather: clicking the pet sometimes reports today's weather (fetched by the main process) */
+  weatherEnabled: boolean;
+  /** Hourly chime: the pet jumps and announces the hour */
+  hourlyChime: boolean;
+}
+
+/** Weather reported by the main process (free APIs: ipwho.is for location + Open-Meteo) */
+interface WeatherResult {
+  ok: boolean;
+  /** City / region name (localized by the API) */
+  city?: string;
+  /** Temperature in °C */
+  temp?: number;
+  /** WMO weather code */
+  code?: number;
+  /** Local date YYYY-MM-DD */
+  date?: string;
+  /** Failure reason */
+  error?: string;
 }
 
 /** API exposed to the renderer by the preload script via contextBridge */
@@ -194,6 +215,8 @@ interface PetApi {
   clearCustomImage(): Promise<boolean>;
   /** Get the active locale + dictionary for the renderer's i18n */
   getI18n(): Promise<I18nPayload>;
+  /** Get today's weather (main process fetches from free APIs to avoid CORS; cached ~30 min) */
+  getWeather(): Promise<WeatherResult>;
 }
 
 interface Window {

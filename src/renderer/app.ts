@@ -11,6 +11,7 @@
 //  - Focus mode (专注模式): while enabled, reminds the user every N minutes to stand up and stretch
 //  - Accessories (装扮系统): procedural pixel hat / scarf / glasses for the robot sheet
 //  - Idle actions (随机小动作): the pet randomly yawns / stretches / scratches / dances while idle
+//  - Life assistant (生活助手): proactive greetings, weather reports and an hourly chime
 //  - Hotkeys: Ctrl+Shift+P opens settings; Esc quits the pet
 //
 // Global types come from src/shared/types.ts (interface declarations, compile-time only).
@@ -83,6 +84,9 @@ let config: AppConfig = {
   statsClicks: 0,
   statsChats: 0,
   affinityHistory: [],
+  greetEnabled: true,
+  weatherEnabled: true,
+  hourlyChime: true,
 };
 
 // Smoke mode (main loads index.html?smoke=1): skip auto-played idle actions so
@@ -286,6 +290,114 @@ function stopAction() {
     currentAction = null;
     nextActionAt = Date.now() + 6000 + Math.random() * 10000;
   }
+  nextGreetAt = Date.now() + GREET_IDLE_MS; // a real interaction also defers the proactive greeting
+}
+
+// ---------- Proactive chat (主动搭话) ----------
+// After 10 minutes without any interaction the pet wakes up and says hi once.
+const GREET_IDLE_MS = 10 * 60 * 1000;
+let nextGreetAt = Date.now() + GREET_IDLE_MS;
+
+function maybeGreet(now: number) {
+  if (config.greetEnabled && now >= nextGreetAt && !dragging && chatUiEl.classList.contains('hidden') && !currentAction) {
+    nextGreetAt = now + GREET_IDLE_MS;
+    wake(); // it was probably sleeping — wake it so the greeting is visible
+    showBubble(rand(window.PetricI18n.tArray('greet.lines')), { ms: 4000 });
+  }
+}
+
+// ---------- Weather (天气播报) ----------
+// The main process fetches location + forecast from free APIs and caches them;
+// this side only caches the latest result for instant bubbles on clicks.
+let weatherData: WeatherResult | null = null;
+let weatherLoading = false;
+
+async function refreshWeather(): Promise<WeatherResult | null> {
+  if (weatherLoading) return weatherData;
+  weatherLoading = true;
+  try {
+    weatherData = await window.api.getWeather();
+  } catch {
+    weatherData = { ok: false, error: 'ipc failed' };
+  }
+  weatherLoading = false;
+  return weatherData;
+}
+
+/** Map a WMO weather code to one of the localized 'weather.N' descriptions. */
+function wmoGroup(code: number): number {
+  if (code === 0) return 0;
+  if (code >= 1 && code <= 3) return 1;
+  if (code === 45 || code === 48) return 3;
+  if (code >= 51 && code <= 55) return 4;
+  if (code >= 56 && code <= 67) return code >= 56 && code <= 57 ? 6 : 5;
+  if (code >= 71 && code <= 77) return 7;
+  if (code >= 80 && code <= 82) return 8;
+  if (code === 85 || code === 86) return 9;
+  if (code === 95) return 10;
+  if (code === 96 || code === 99) return 11;
+  return 2;
+}
+
+/** Build the localized weather bubble text, or null when unavailable. */
+function weatherBubbleText(): string | null {
+  if (!weatherData?.ok) return null;
+  const i18n = window.PetricI18n;
+  const d = new Date((weatherData.date || todayStr()) + 'T00:00:00');
+  const date =
+    i18n.getLocale() === 'en'
+      ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : `${d.getMonth() + 1}月${d.getDate()}日`;
+  const desc = i18n.t('weather.' + wmoGroup(weatherData.code ?? 0));
+  return i18n.t('weather.today', {
+    date,
+    city: weatherData.city || '—',
+    temp: weatherData.temp ?? 0,
+    desc,
+  });
+}
+
+/** Click-time weather report: cached result, or a loading bubble that resolves. */
+async function maybeShowWeather() {
+  if (weatherData?.ok) {
+    showBubble(weatherBubbleText()!, { ms: 4500 });
+    return;
+  }
+  showBubble(window.PetricI18n.t('weather.loading'), { ms: 3000 });
+  await refreshWeather();
+  if (weatherData?.ok) showBubble(weatherBubbleText()!, { ms: 4500 });
+  else showBubble(window.PetricI18n.t('weather.unavailable'), { ms: 3000 });
+}
+
+// ---------- Hourly chime (整点报时) ----------
+let chimeTimer: number | undefined;
+
+function scheduleChime() {
+  window.clearTimeout(chimeTimer);
+  if (!config.hourlyChime) return;
+  const now = new Date();
+  const ms = (60 - now.getMinutes()) * 60_000 - now.getSeconds() * 1000 - now.getMilliseconds() + 1500;
+  chimeTimer = window.setTimeout(chime, Math.max(1000, ms));
+}
+
+function chime() {
+  const hour = new Date().getHours();
+  const i18n = window.PetricI18n;
+  const display =
+    i18n.getLocale() === 'en'
+      ? `${((hour + 11) % 12) + 1} ${hour < 12 ? 'AM' : 'PM'}`
+      : String(hour);
+  const text = '⏰ ' + i18n.t('chime.hour', { hour: display });
+  lastActivity = Date.now();
+  wake();
+  setState('click'); // a little jump to draw attention
+  if (!chatUiEl.classList.contains('hidden')) {
+    showChatReply(text);
+  } else {
+    showBubble(text, { ms: 5000 });
+  }
+  playChime();
+  scheduleChime();
 }
 
 // ---------- 3D Model Mode (customImageMode === 'model') ----------
@@ -307,9 +419,14 @@ function initPet3D(): Petric3DHandle | null {
 // whether the cursor is over the pet (opaque pixels). Transparent areas -> clicks pass through to the desktop (Windows).
 const HIT_SCALE = 4; // 75x75 hit canvas
 let hitCanvas: HTMLCanvasElement | null = null;
+let hitAlpha: Uint8Array | null = null; // JS mirror of the hit map — kills per-move GPU readbacks
 let overPet = false; // whether the cursor is currently over the pet
 
-/** Rebuild the hit canvas after each frame's draw (canvas-to-canvas runs on the GPU, very cheap) */
+/**
+ * Rebuild the hit map after each frame's draw. The canvas-to-canvas downscale runs
+ * on the GPU; the alpha plane is then read back ONCE per frame into a JS array so
+ * mousemove / clicks never stall the pipeline with getImageData calls.
+ */
 function buildHitMap() {
   const hw = Math.ceil(300 / HIT_SCALE);
   const hh = Math.ceil(300 / HIT_SCALE);
@@ -321,17 +438,21 @@ function buildHitMap() {
   const hctx = hitCanvas.getContext('2d', { willReadFrequently: true })!;
   hctx.clearRect(0, 0, hw, hh);
   hctx.drawImage(canvas, 0, 0, 300, 300, 0, 0, hw, hh);
+  const d = hctx.getImageData(0, 0, hw, hh).data;
+  if (!hitAlpha || hitAlpha.length !== hw * hh) hitAlpha = new Uint8Array(hw * hh);
+  for (let i = 0, p = 3; i < hw * hh; i++, p += 4) hitAlpha[i] = d[p];
 }
 
 /** Whether the cursor (window coordinates) falls on the pet (2D pixel hitmap or 3D raycast) */
 function isOverPet(clientX: number, clientY: number): boolean {
   if (pet3dActive && pet3d) return pet3d.isOver(clientX, clientY);
-  if (!hitCanvas) return false;
+  if (!hitAlpha || !hitCanvas) return false;
+  // Coarse bounding-box early-out: the pet never reaches the far corners of the window.
+  if (clientX < 70 || clientX > 230 || clientY < 90) return false;
   const hx = Math.floor(clientX / HIT_SCALE);
   const hy = Math.floor(clientY / HIT_SCALE);
   if (hx < 0 || hy < 0 || hx >= hitCanvas.width || hy >= hitCanvas.height) return false;
-  const d = hitCanvas.getContext('2d')!.getImageData(hx, hy, 1, 1).data;
-  return d[3] > 20; // alpha threshold, ignores semi-transparent edges
+  return hitAlpha[hy * hitCanvas.width + hx] > 20; // alpha threshold, ignores semi-transparent edges
 }
 
 // Built-in appearance cache (preloaded for zero-wait switching). The first three
@@ -379,6 +500,7 @@ function setState(s: PetState) {
 
 function wake() {
   if (state === 'sleeping') setState('idle');
+  startLoop(); // resume the full-speed loop immediately on any interaction
 }
 
 function enterSleep() {
@@ -426,6 +548,10 @@ function update(dt: number) {
       nextActionAt = now + 6000 + Math.random() * 10000;
     }
   }
+
+  // Proactive chat: after 10 min of inactivity the pet wakes up and says hi
+  // (checked outside the idle block because the pet is usually asleep by then).
+  if (!IS_SMOKE) maybeGreet(now);
 
   // Zzz particles while sleeping
   if (state === 'sleeping') {
@@ -968,10 +1094,26 @@ function buildCustomSprite(dataUrl: string, mode: CustomImageMode): Promise<Cust
   });
 }
 
-// ---------- Main Loop ----------
+// ---------- Main Loop (with sleep throttling) ----------
+// While awake the pet renders at the main-process-capped 60 fps. Once it falls
+// asleep the vsync loop is PAUSED and a ~2 fps tick keeps the sleep animation,
+// the Zzz particles and the wake checks alive — the transparent always-on-top
+// window stops submitting per-vsync frames, which is the biggest GPU win.
 let lastTime = performance.now();
 let lastMouseX = 150; // for drag velocity (billboard lean)
+let loopRunning = false;
+let sleepTickTimer: number | undefined;
+
+function startLoop() {
+  if (loopRunning) return;
+  loopRunning = true;
+  window.clearTimeout(sleepTickTimer);
+  lastTime = performance.now();
+  requestAnimationFrame(loop);
+}
+
 function loop(now: number) {
+  if (!loopRunning) return;
   const dt = Math.min((now - lastTime) / 1000, 0.1); // clamp to avoid huge jumps after backgrounding
   lastTime = now;
   update(dt);
@@ -984,7 +1126,32 @@ function loop(now: number) {
   }
   lastMouseX = mouse.x;
   draw();
+
+  if (state === 'sleeping') {
+    // Pause the vsync loop while sleeping; a slow tick keeps things alive cheaply.
+    loopRunning = false;
+    window.clearTimeout(sleepTickTimer);
+    sleepTickTimer = window.setTimeout(sleepTick, 500);
+    return;
+  }
   requestAnimationFrame(loop);
+}
+
+/** ~2 fps tick used while the pet is asleep (sleep frames + Zzz + wake checks). */
+function sleepTick() {
+  if (state !== 'sleeping') {
+    startLoop();
+    return;
+  }
+  update(0.5); // advances the 2 fps sleep frames + floating Zzz
+  if (pet3dActive && pet3d) {
+    pet3d.setPointer(mouse.x, dragging, 0);
+    pet3d.update(0.5, state, frameIndex);
+    pet3d.render();
+  }
+  draw();
+  window.clearTimeout(sleepTickTimer);
+  sleepTickTimer = window.setTimeout(sleepTick, 500);
 }
 
 // ---------- Speech Bubble ----------
@@ -1326,6 +1493,8 @@ function handleSingleClick() {
     }
   } else if (config.affinity >= AFFINITY_MAX && Math.random() < 0.3) {
     showBubble(window.PetricI18n.t('affinity.maxed'));
+  } else if (config.weatherEnabled && Math.random() < 0.25) {
+    void maybeShowWeather(); // 25% chance to report today's weather instead of a line
   } else {
     showBubble(rand(window.PetricI18n.tArray('lines')));
   }
@@ -1434,6 +1603,7 @@ function applyConfig(cfg: AppConfig) {
     void refreshCustomSprite();
   }
   startReminder(); // restart the break-reminder timer when the interval / mode changes
+  scheduleChime(); // restart the hourly-chime timer when the toggle changes
   renderAffinityBadge(); // keep the hearts badge in sync (incl. changes from the settings panel)
 }
 
@@ -1464,7 +1634,10 @@ async function initPet() {
 
   // Start in click-through state (Windows); mousemove restores interaction once the cursor is over the pet
   canvas.style.cursor = 'default';
-  requestAnimationFrame(loop);
+  startLoop();
+
+  // Pre-warm the weather cache so click reports are instant (non-blocking)
+  void refreshWeather();
 
   // First-time greeting
   setTimeout(() => showBubble(window.PetricI18n.t('bubble.greeting'), { ms: 2200 }), 800);

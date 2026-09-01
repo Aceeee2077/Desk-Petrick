@@ -40,6 +40,7 @@ const api: PetApi = {
   pickCustomImage: () => ipcRenderer.invoke('custom:pick'),
   clearCustomImage: () => ipcRenderer.invoke('custom:clear'),
   getI18n: () => ipcRenderer.invoke('i18n:get'),
+  getWeather: () => ipcRenderer.invoke('weather:get'),
 };
 
 contextBridge.exposeInMainWorld('api', api);

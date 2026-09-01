@@ -11,6 +11,14 @@ import { encodePng } from '../shared/png';
 import { getDict, makeT } from '../shared/i18n';
 import { removeImageBackground } from './background-removal';
 
+// GPU / compositor tuning for the transparent pet window (Discord-like smoothness):
+// - enable-gpu-rasterization: rasterize page layers on the GPU instead of the CPU
+// - enable-zero-copy: zero-copy rasterization, less memory bandwidth for the
+//   per-vsync compositing of the always-on-top transparent window
+// These must be set before the app is ready.
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+
 /** Translate a key using the current persisted locale (re-evaluated per call, so a locale switch takes effect immediately). */
 function t(key: string, params?: Record<string, string | number>): string | I18nValue {
   return makeT(loadConfig().locale)(key, params);
@@ -113,6 +121,61 @@ function recordLaunchStats() {
   });
 }
 
+// ---------- Weather (free APIs, called from the main process to avoid CORS) ----------
+// Location: ipwho.is (free, no key). Forecast: Open-Meteo (free, no key). Both are
+// cached for WEATHER_TTL so we never hammer the endpoints.
+const WEATHER_TTL = 30 * 60 * 1000;
+const WEATHER_FAIL_TTL = 5 * 60 * 1000;
+let weatherCache: { at: number; data: WeatherResult } = { at: 0, data: { ok: false, error: 'not fetched' } };
+
+async function fetchWithTimeout(url: string, ms: number): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchWeather(): Promise<WeatherResult> {
+  try {
+    // 1) Location from the caller's IP
+    const locRes = await fetchWithTimeout('https://ipwho.is/', 8000);
+    if (!locRes.ok) throw new Error('location http ' + locRes.status);
+    const loc = (await locRes.json()) as { success?: boolean; latitude?: number; longitude?: number; city?: string; country?: string };
+    if (loc.success === false || typeof loc.latitude !== 'number' || typeof loc.longitude !== 'number') {
+      throw new Error('location lookup failed');
+    }
+    // 2) Forecast from Open-Meteo (current temperature + WMO weather code)
+    const url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}` +
+      '&current=temperature_2m,weather_code&timezone=auto';
+    const wRes = await fetchWithTimeout(url, 8000);
+    if (!wRes.ok) throw new Error('weather http ' + wRes.status);
+    const w = (await wRes.json()) as { current?: { temperature_2m?: number; weather_code?: number } };
+    return {
+      ok: true,
+      city: loc.city || loc.country || 'Unknown',
+      temp: Math.round(w.current?.temperature_2m ?? 0),
+      code: w.current?.weather_code ?? 0,
+      date: todayStr(),
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Get today's weather, using the cache when fresh. Failures are cached briefly too. */
+async function getWeather(): Promise<WeatherResult> {
+  const now = Date.now();
+  const ttl = weatherCache.data.ok ? WEATHER_TTL : WEATHER_FAIL_TTL;
+  if (now - weatherCache.at < ttl) return weatherCache.data;
+  const data = await fetchWeather();
+  weatherCache = { at: now, data };
+  return data;
+}
+
 // ---------- Pet main window ----------
 function createPetWindow() {
   mainWindow = new BrowserWindow({
@@ -137,6 +200,10 @@ function createPetWindow() {
       backgroundThrottling: false, // Keep requestAnimationFrame running continuously
     },
   });
+
+  // Cap the pet renderer to 60 fps. The pet animation itself runs at 6-12 fps, so on
+  // 120/144 Hz displays this removes the vsync-rate waste without any visible change.
+  mainWindow.webContents.setFrameRate(60);
 
   // A frameless transparent window can still be resized by Windows while DPI, snapping,
   // or display topology changes are being applied. If its viewport grows, the fixed-size
@@ -661,6 +728,7 @@ function registerIpc() {
   ipcMain.on('settings:open', () => openSettings());
 
   ipcMain.handle('ai:chat', async (_e, messages: ChatMessage[]) => aiChat(messages));
+  ipcMain.handle('weather:get', () => getWeather());
 
   ipcMain.handle('custom:get', () => getCustomImage());
   ipcMain.handle('custom:pick', () => pickCustomImage());

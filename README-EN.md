@@ -39,6 +39,9 @@
 | 🎩 Accessories | Procedural pixel hat / scarf / glasses for the robot skin |
 | 🕺 Idle actions | The pet randomly yawns, stretches, scratches and dances while idle — it feels alive |
 | 📊 Interaction stats | Days together, click / chat counts and an affinity growth curve (chart in Settings) |
+| 💬 Proactive chat | After 10 idle minutes the pet says hi on its own (toggleable) |
+| ☁️ Weather | Clicking the pet sometimes reports today's weather (free APIs, fetched by the main process, toggleable) |
+| ⏰ Hourly chime | The pet jumps and announces each hour (toggleable) |
 | 📍 Position memory | Remembers its position and returns there on restart |
 
 **Quick interactions**
@@ -145,6 +148,7 @@ Artifacts are written to the `release/` directory.
 | Auto-launch | Based on the native `app.setLoginItemSettings` API |
 | Reset position | Back to the center of the primary display |
 | Focus Mode | Break-reminder toggle + interval (20 / 30 / 40 / 60 / 90 minutes) |
+| Life Assistant | Independent toggles: proactive chat / weather / hourly chime |
 | AI chat | Enable toggle + Base URL + API Key + model name + test button |
 
 ### 🤖 Configuring AI Chat

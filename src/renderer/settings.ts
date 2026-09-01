@@ -188,6 +188,9 @@ async function initSettings() {
   const focusIntervalButtons = Array.from(
     document.querySelectorAll<HTMLButtonElement>('#focus-interval-seg button'),
   );
+  const greetEnabledEl = $<HTMLInputElement>('greet-enabled');
+  const weatherEnabledEl = $<HTMLInputElement>('weather-enabled');
+  const hourlyChimeEl = $<HTMLInputElement>('hourly-chime');
   const accessoryButtons = Array.from(
     document.querySelectorAll<HTMLButtonElement>('#accessory-seg button'),
   );
@@ -225,6 +228,9 @@ async function initSettings() {
   modelEl.value = cfg.model;
   focusModeEl.checked = cfg.focusMode;
   focusIntervalButtons.forEach((b) => b.classList.toggle('active', Number(b.dataset.min) === cfg.focusInterval));
+  greetEnabledEl.checked = cfg.greetEnabled;
+  weatherEnabledEl.checked = cfg.weatherEnabled;
+  hourlyChimeEl.checked = cfg.hourlyChime;
   accessoryButtons.forEach((b) => b.classList.toggle('active', b.dataset.accessory === cfg.accessory));
   affinityValue = cfg.affinity;
   renderAffinityDisplay();
@@ -365,12 +371,24 @@ async function initSettings() {
     });
   });
 
+  // Life assistant toggles
+  greetEnabledEl.addEventListener('change', () => window.api.setConfig({ greetEnabled: greetEnabledEl.checked }));
+  weatherEnabledEl.addEventListener('change', () =>
+    window.api.setConfig({ weatherEnabled: weatherEnabledEl.checked }),
+  );
+  hourlyChimeEl.addEventListener('change', () =>
+    window.api.setConfig({ hourlyChime: hourlyChimeEl.checked }),
+  );
+
   // Keep the affinity / focus / theme / stats UI in sync with changes made elsewhere (e.g. by the pet window)
   window.api.onConfigChanged((cfg) => {
     affinityValue = cfg.affinity;
     renderAffinityDisplay();
     focusModeEl.checked = cfg.focusMode;
     focusIntervalButtons.forEach((b) => b.classList.toggle('active', Number(b.dataset.min) === cfg.focusInterval));
+    greetEnabledEl.checked = cfg.greetEnabled;
+    weatherEnabledEl.checked = cfg.weatherEnabled;
+    hourlyChimeEl.checked = cfg.hourlyChime;
     themeButtons.forEach((b) => b.classList.toggle('active', b.dataset.theme === cfg.theme));
     accessoryButtons.forEach((b) => b.classList.toggle('active', b.dataset.accessory === cfg.accessory));
     document.documentElement.dataset.theme = cfg.theme;

@@ -34,6 +34,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   statsClicks: 0,
   statsChats: 0,
   affinityHistory: [],
+  greetEnabled: true,
+  weatherEnabled: true,
+  hourlyChime: true,
 };
 
 let cache: AppConfig | null = null;
