@@ -1784,6 +1784,9 @@ async function initPet() {
     addAffinity(2);
   });
 
+  // Main-process notices (e.g. a new version is downloading) appear as a speech bubble
+  window.api.onPetNotice((text) => showBubble(text, { ms: 6000 }));
+
   // Start in click-through state (Windows); mousemove restores interaction once the cursor is over the pet
   canvas.style.cursor = 'default';
   startLoop();

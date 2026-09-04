@@ -46,6 +46,7 @@
 | ☁️ 天气播报 | 点击宠物随机播报今日天气（免费 API，主进程请求，可开关） |
 | ⏰ 整点报时 | 每小时整点宠物跳一下并报时（可开关） |
 | 📍 记忆位置 | 记住上次位置，重启后回到原处 |
+| 🔄 自动更新 | 打包安装版启动后自动检查 GitHub Releases 的新版本：后台下载 → 弹窗「一键重启更新」（类似 Discord；托盘 / 右键菜单可手动检查） |
 
 **操作速查**
 
@@ -128,6 +129,22 @@ npm run dist:win      # 在 Windows 上打包 Windows 版
 > - 跨平台打包（如在 Windows 上打 macOS 包）需要对应平台环境，一般建议在 CI（GitHub Actions）里用各平台 runner 分别构建。
 > - macOS 发布正式版需要 Apple Developer 证书签名与公证；个人使用可不签名。
 > - Windows 首次运行 SmartScreen 可能提示“未知发布者”，点击“更多信息 → 仍要运行”即可（正式分发请配置代码签名证书）。
+
+### 🔄 自动更新（类似 Discord）
+
+打包安装版启动约 8 秒后会通过 **GitHub Releases** 自动检查新版本（`electron-updater`）：
+发现新版即在后台下载 → 就绪后弹窗「🔄 立即重启更新」，一键退出、安装并重启到新版本；
+托盘 / 宠物右键菜单也有「🔄 检查更新」（开发模式会提示不可用）。
+
+- **Windows（NSIS）/ Linux（AppImage）**：支持全自动下载安装；macOS 未签名版无法自动
+  安装，会引导打开下载页手动更新。
+- 每次发版时，把安装包连同 electron-builder 生成的**元数据文件**一起挂到对应 tag 的
+  GitHub Release：
+  - Windows：`Petric Setup x.y.z.exe` + `latest.yml` + `.blockmap`
+  - Linux：`Petric-x.y.z.AppImage` + `latest-linux.yml`
+  - tag 建议与版本号一致（如 `v0.3.0`）。
+- 本地构建不会自动上传：`npm run dist:win` 后把 `release/` 产物手动挂到 Release 即可。
+- 自动更新只在**已安装的打包版**里生效；`npm run dev` 开发模式不触发。
 
 ---
 

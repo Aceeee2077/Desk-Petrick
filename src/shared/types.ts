@@ -261,6 +261,8 @@ interface PetApi {
   onChatsChanged(cb: (state: ChatState) => void): () => void;
   /** Subscribe to "an AI reply just completed" (pet adds affinity / stats via this) */
   onChatReward(cb: () => void): () => void;
+  /** Subscribe to main-process notices shown as a pet speech bubble (e.g. "new update") */
+  onPetNotice(cb: (text: string) => void): () => void;
   /** Read the currently active custom image (userData takes priority, then the project's src/assets/sprites/custom.*) */
   getCustomImage(): Promise<CustomImageResult>;
   /** Open a file picker, copy the selected image into the app data directory and return it */

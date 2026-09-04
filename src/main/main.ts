@@ -3,7 +3,7 @@
 // Responsibilities: transparent always-on-top window, tray, IPC, AI chat (network requests), auto-launch at login, config persistence.
 // ============================================================================
 
-import { app, BrowserWindow, dialog, ipcMain, Menu, Tray, nativeImage, screen } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, Tray, nativeImage, screen } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DEFAULT_CONFIG, loadConfig, saveConfig } from '../shared/config';
@@ -80,6 +80,7 @@ if (!gotLock) {
     createPetWindow();
     createTray();
     registerIpc();
+    if (app.isPackaged && !IS_SMOKE && !IS_SCREENSHOT) setupAutoUpdate();
     if (IS_SMOKE) runSmoke();
     if (IS_SCREENSHOT) void runScreenshot();
   });
@@ -418,6 +419,7 @@ function rebuildTrayMenu() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: ts('menu.chat'), click: () => openChatWindow() },
+      { label: ts('menu.checkUpdate'), click: () => void checkUpdates(true) },
       { label: ts('menu.settings'), click: () => openSettings() },
       { label: ts('menu.resetPos'), click: () => mainWindow && centerWindow(mainWindow) },
       { type: 'separator' },
@@ -491,11 +493,162 @@ function openChatWindow() {
   );
 }
 
+// ---------- Auto update (GitHub Releases via electron-updater) ----------
+// Packaged builds check the public GitHub Releases of this repo shortly after launch.
+// When a newer release exists the update downloads in the background, then the user gets
+// a one-click "restart & update" dialog. macOS unsigned builds cannot auto-install, so
+// they fall back to opening the release page. Dev mode never auto-updates.
+const UPDATE_OWNER = 'Aceeee2077';
+const UPDATE_REPO = 'Desk-Petrick';
+
+interface AutoUpdaterLike {
+  autoDownload: boolean;
+  on(event: string, listener: (info?: any) => void): void;
+  checkForUpdates(): Promise<unknown>;
+  quitAndInstall(): void;
+}
+
+let autoUpdaterHandle: AutoUpdaterLike | null = null;
+let updateDialogOpen = false;
+let manualCheckPending = false;
+
+/** Load electron-updater only when it is available (it is bundled into packaged builds). */
+function loadAutoUpdater(): AutoUpdaterLike | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('electron-updater') as { autoUpdater?: AutoUpdaterLike };
+    return mod.autoUpdater ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Compare two semver strings ("v0.3.0" or "0.3.0"); 1 = a newer, -1 = a older, 0 = equal. */
+function compareVersions(a: string, b: string): number {
+  const pa = a.replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  const pb = b.replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+/** Ask the pet window to show a localized notice bubble (e.g. an update is downloading). */
+function noticePet(text: string) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('pet:notice', text);
+}
+
+/** Wire electron-updater events + kick off the first background check 8 s after launch. */
+function setupAutoUpdate() {
+  if (process.platform === 'darwin') return; // unsigned mac builds update manually instead
+  autoUpdaterHandle = loadAutoUpdater();
+  if (!autoUpdaterHandle) {
+    console.warn('[update] electron-updater 不可用（依赖未安装，或未以打包形式运行）');
+    return;
+  }
+  const updater = autoUpdaterHandle;
+  updater.autoDownload = true;
+  updater.on('update-available', (info) => {
+    const v = info?.version ? 'v' + info.version : '';
+    console.log('[update] 发现新版本:', info?.version);
+    if (v) noticePet(ts('update.available', { v }));
+  });
+  updater.on('update-downloaded', (info) => {
+    console.log('[update] 新版本已下载:', info?.version);
+    void promptRestartAndUpdate(info?.version || '');
+  });
+  updater.on('update-not-available', () => {
+    console.log('[update] 已是最新版本');
+    if (manualCheckPending) {
+      manualCheckPending = false;
+      void dialog.showMessageBox({ type: 'info', message: ts('update.none', { v: 'v' + app.getVersion() }) });
+    }
+  });
+  updater.on('error', (err) => console.error('[update] 检查失败:', err));
+  setTimeout(() => void checkUpdates(false), 8000);
+}
+
+async function checkUpdates(manual: boolean) {
+  if (!app.isPackaged) {
+    if (manual) {
+      await dialog.showMessageBox({ type: 'info', message: ts('update.devUnsupported') });
+    }
+    return;
+  }
+  // macOS (unsigned) and any build without electron-updater use the manual GitHub path
+  if (process.platform === 'darwin' || !autoUpdaterHandle) {
+    if (manual) await checkGitHubManual();
+    return;
+  }
+  if (manual) manualCheckPending = true;
+  try {
+    await autoUpdaterHandle.checkForUpdates();
+  } catch (err) {
+    manualCheckPending = false;
+    console.error('[update] checkForUpdates 失败:', err);
+    if (manual) await dialog.showMessageBox({ type: 'error', message: ts('update.checkFailed') });
+  }
+}
+
+/** Offer the Discord-style "restart & update" once a new version finished downloading. */
+async function promptRestartAndUpdate(version: string) {
+  if (updateDialogOpen) return;
+  updateDialogOpen = true;
+  const v = version ? 'v' + version : 'v' + app.getVersion();
+  const res = await dialog.showMessageBox({
+    type: 'info',
+    buttons: [ts('update.restart'), ts('update.later')],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+    message: ts('update.readyTitle'),
+    detail: ts('update.readyBody', { v }),
+  });
+  updateDialogOpen = false;
+  if (res.response === 0 && autoUpdaterHandle) {
+    try {
+      autoUpdaterHandle.quitAndInstall(); // quits the app, installs, relaunches the new version
+    } catch (err) {
+      console.error('[update] quitAndInstall 失败:', err);
+    }
+  }
+}
+
+/** Manual update check via the GitHub API (used on macOS / without electron-updater). */
+async function checkGitHubManual() {
+  const url = `https://api.github.com/repos/${UPDATE_OWNER}/${UPDATE_REPO}/releases/latest`;
+  try {
+    const res = await fetchWithTimeout(url, 8000);
+    if (!res.ok) throw new Error('http ' + res.status);
+    const rel = (await res.json()) as { tag_name?: string; html_url?: string };
+    const tag = rel.tag_name || '';
+    if (tag && compareVersions(tag, app.getVersion()) > 0) {
+      const r = await dialog.showMessageBox({
+        type: 'info',
+        buttons: [ts('update.open'), ts('update.cancel')],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+        message: `${ts('update.manualTitle')} ${tag}`,
+        detail: `${ts('update.manualBody', { v: tag })}\n${rel.html_url || url}`,
+      });
+      if (r.response === 0 && rel.html_url) await shell.openExternal(rel.html_url);
+    } else {
+      await dialog.showMessageBox({ type: 'info', message: ts('update.none', { v: 'v' + app.getVersion() }) });
+    }
+  } catch (err) {
+    console.error('[update] GitHub 手动检查失败:', err);
+    await dialog.showMessageBox({ type: 'error', message: ts('update.checkFailed') });
+  }
+}
+
 // ---------- Context menu ----------
 function showPetContextMenu() {
   const menu = Menu.buildFromTemplate([
     { label: ts('menu.settings'), click: () => openSettings() },
     { label: ts('menu.chat'), click: () => openChatWindow() },
+    { label: ts('menu.checkUpdate'), click: () => void checkUpdates(true) },
     { label: ts('menu.resetPos'), click: () => mainWindow && centerWindow(mainWindow) },
     { type: 'separator' },
     { label: ts('menu.quitPet'), click: () => app.quit() },

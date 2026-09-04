@@ -53,6 +53,13 @@ const api: PetApi = {
       ipcRenderer.removeListener('pet:chat-reward', listener);
     };
   },
+  onPetNotice: (cb) => {
+    const listener = (_e: Electron.IpcRendererEvent, text: string) => cb(text);
+    ipcRenderer.on('pet:notice', listener);
+    return () => {
+      ipcRenderer.removeListener('pet:notice', listener);
+    };
+  },
   getCustomImage: () => ipcRenderer.invoke('custom:get'),
   pickCustomImage: () => ipcRenderer.invoke('custom:pick'),
   clearCustomImage: () => ipcRenderer.invoke('custom:clear'),

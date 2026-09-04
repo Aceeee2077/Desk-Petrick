@@ -45,6 +45,7 @@
 | ☁️ Weather | Clicking the pet sometimes reports today's weather (free APIs, fetched by the main process, toggleable) |
 | ⏰ Hourly chime | The pet jumps and announces each hour (toggleable) |
 | 📍 Position memory | Remembers its position and returns there on restart |
+| 🔄 Auto-update | Installed builds check GitHub Releases for new versions shortly after launch — background download, then a one-click "restart & update" prompt (Discord-style; manual check from the tray / pet context menu) |
 
 **Quick interactions**
 
@@ -130,6 +131,24 @@ Artifacts are written to the `release/` directory.
 >   builds are fine for personal use.
 > - Windows SmartScreen may warn "Unknown publisher" on first launch — click
 >   "More info → Run anyway" (configure code-signing for official distribution).
+
+### 🔄 Auto-update (Discord-style)
+
+About 8 seconds after launch, installed builds check **GitHub Releases** for a newer version
+(`electron-updater`): the update downloads in the background, then a "🔄 Restart & Update"
+dialog appears — one click quits, installs and relaunches the new version. There is also a
+"🔄 Check for Updates" item in the tray / pet context menu (dev mode says it's unavailable).
+
+- **Windows (NSIS) / Linux (AppImage)**: fully automatic download & install. Unsigned macOS
+  builds can't auto-install — they open the download page for a manual update instead.
+- For each release, upload the installer **together with the metadata files** electron-builder
+  generates, to the GitHub Release of that tag:
+  - Windows: `Petric Setup x.y.z.exe` + `latest.yml` + `.blockmap`
+  - Linux: `Petric-x.y.z.AppImage` + `latest-linux.yml`
+  - Tags should match the version (e.g. `v0.3.0`).
+- Local builds are never uploaded automatically: run `npm run dist:win` and attach the
+  `release/` artifacts to the Release manually.
+- Auto-update only applies to **installed packaged builds**; `npm run dev` never triggers it.
 
 ---
 

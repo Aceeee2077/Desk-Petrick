@@ -16,6 +16,14 @@ asarUnpack:
   - node_modules/@img/**/*
 compression: normal
 
+# Auto-update source: the app (electron-updater) reads this at runtime and checks the
+# public GitHub Releases of this repo for newer versions.
+publish:
+  provider: github
+  owner: Aceeee2077
+  repo: Desk-Petrick
+  releaseType: release
+
 win:
   files:
     - dist/**/*
