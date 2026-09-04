@@ -191,18 +191,125 @@ async function initSettings() {
   const greetEnabledEl = $<HTMLInputElement>('greet-enabled');
   const weatherEnabledEl = $<HTMLInputElement>('weather-enabled');
   const hourlyChimeEl = $<HTMLInputElement>('hourly-chime');
+  const autoMoveEl = $<HTMLInputElement>('auto-move');
   const accessoryButtons = Array.from(
     document.querySelectorAll<HTMLButtonElement>('#accessory-seg button'),
   );
   const accessoryRow = $<HTMLElement>('accessory-row');
+  const markEyesRow = $<HTMLElement>('mark-eyes-row');
+  const markEyesBtn = $<HTMLButtonElement>('btn-mark-eyes');
+  const clearEyesBtn = $<HTMLButtonElement>('btn-clear-eyes');
+  const eyesStatusEl = $<HTMLSpanElement>('eyes-status');
+  const eyesCanvasRow = $<HTMLElement>('eyes-preview-row');
+  const eyesCanvas = $<HTMLCanvasElement>('eyes-preview-canvas');
   affinityDisplayEl = $<HTMLSpanElement>('affinity-display');
+
+  // ---------- Photo-pet eye marking ----------
+  let eyesImg: HTMLImageElement | null = null;
+  let eyesFit: { dx: number; dy: number; dw: number; dh: number } | null = null;
+  let eyePicks: { x: number; y: number }[] = []; // normalized 0..1
+  let savedPhotoEyes = cfg.photoEyes; // for drawing existing marks
+
+  /** Draw the cutout photo on the preview canvas, fitted, plus current / picked eye dots. */
+  function drawEyesPreview() {
+    const c = eyesCanvas.getContext('2d')!;
+    const w = eyesCanvas.width;
+    const h = eyesCanvas.height;
+    c.clearRect(0, 0, w, h);
+    if (!eyesImg) return;
+    const s = Math.min((w - 16) / eyesImg.naturalWidth, (h - 16) / eyesImg.naturalHeight);
+    const dw = eyesImg.naturalWidth * s;
+    const dh = eyesImg.naturalHeight * s;
+    eyesFit = { dx: (w - dw) / 2, dy: (h - dh) / 2, dw, dh };
+    c.drawImage(eyesImg, eyesFit.dx, eyesFit.dy, dw, dh);
+    const dot = (nx: number, ny: number, color: string, label?: string) => {
+      const x = eyesFit!.dx + nx * eyesFit!.dw;
+      const y = eyesFit!.dy + ny * eyesFit!.dh;
+      c.fillStyle = color;
+      c.beginPath();
+      c.arc(x, y, 6, 0, Math.PI * 2);
+      c.fill();
+      if (label) {
+        c.fillStyle = '#fff';
+        c.font = 'bold 11px sans-serif';
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.fillText(label, x, y);
+      }
+    };
+    if (savedPhotoEyes) {
+      dot(savedPhotoEyes.x1, savedPhotoEyes.y1, 'rgba(249,115,22,0.9)', '1');
+      dot(savedPhotoEyes.x2, savedPhotoEyes.y2, 'rgba(249,115,22,0.9)', '2');
+    }
+    eyePicks.forEach((p, i) => dot(p.x, p.y, 'rgba(56,189,248,0.95)', String(i + 1)));
+  }
+
+  async function startMarkEyes() {
+    eyePicks = [];
+    eyesCanvasRow.hidden = false;
+    const res = await window.api.getCustomImage();
+    if (!res.ok || !res.dataUrl) {
+      eyesStatusEl.textContent = window.PetricI18n.t('settings.eyesFail');
+      return;
+    }
+    eyesStatusEl.textContent = window.PetricI18n.t('settings.markEyesHint');
+    const dataUrl = res.dataUrl; // narrowed to string by the guard above
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject();
+      img.src = dataUrl;
+    }).catch(() => undefined);
+    if (!img.naturalWidth) {
+      eyesStatusEl.textContent = window.PetricI18n.t('settings.eyesFail');
+      return;
+    }
+    eyesImg = img;
+    drawEyesPreview();
+  }
+
+  markEyesBtn.addEventListener('click', () => void startMarkEyes());
+  clearEyesBtn.addEventListener('click', async () => {
+    savedPhotoEyes = null;
+    eyePicks = [];
+    await window.api.setConfig({ photoEyes: null });
+    eyesStatusEl.textContent = window.PetricI18n.t('settings.eyesCleared');
+    clearEyesBtn.hidden = true;
+    drawEyesPreview();
+  });
+  eyesCanvas.addEventListener('click', async (e) => {
+    if (!eyesImg || !eyesFit) return;
+    const rect = eyesCanvas.getBoundingClientRect();
+    const px = ((e.clientX - rect.left) / rect.width) * eyesCanvas.width;
+    const py = ((e.clientY - rect.top) / rect.height) * eyesCanvas.height;
+    if (px < eyesFit.dx || px > eyesFit.dx + eyesFit.dw || py < eyesFit.dy || py > eyesFit.dy + eyesFit.dh) return;
+    const nx = (px - eyesFit.dx) / eyesFit.dw;
+    const ny = (py - eyesFit.dy) / eyesFit.dh;
+    if (eyePicks.length >= 2) eyePicks = [];
+    eyePicks.push({ x: nx, y: ny });
+    drawEyesPreview();
+    if (eyePicks.length === 2) {
+      const [a, b] = eyePicks;
+      savedPhotoEyes = { x1: a.x, y1: a.y, x2: b.x, y2: b.y };
+      await window.api.setConfig({ photoEyes: savedPhotoEyes });
+      eyesStatusEl.textContent = window.PetricI18n.t('settings.eyesMarked');
+      clearEyesBtn.hidden = false;
+    }
+  });
 
   // Show/hide the custom appearance controls
   const setCustomRows = (show: boolean) => customRows.forEach((el) => (el.hidden = !show));
+  const selectedSkin = (): PetSkin =>
+    (skinButtons.find((b) => b.classList.contains('active'))?.dataset.skin as PetSkin) || 'cat';
   // The currently selected appearance type (read from the highlighted button in the UI)
   const selectedCustomMode = (): CustomImageMode =>
     (customModeButtons.find((b) => b.classList.contains('active'))?.dataset.mode as CustomImageMode) ||
     'single';
+  // Eye marking only makes sense for the custom "Single image" mode.
+  const setMarkEyesRow = () => {
+    markEyesRow.hidden = selectedSkin() !== 'custom' || selectedCustomMode() !== 'single';
+    if (markEyesRow.hidden) eyesCanvasRow.hidden = true;
+  };
 
   // ---------- Populate the form from the current config ----------
   localeButtons.forEach((b) => b.classList.toggle('active', b.dataset.locale === cfg.locale));
@@ -211,7 +318,9 @@ async function initSettings() {
   skinButtons.forEach((b) => b.classList.toggle('active', b.dataset.skin === cfg.skin));
   customModeButtons.forEach((b) => b.classList.toggle('active', b.dataset.mode === cfg.customImageMode));
   setCustomRows(cfg.skin === 'custom');
-  accessoryRow.hidden = cfg.skin !== 'robot';
+  setMarkEyesRow();
+  clearEyesBtn.hidden = !cfg.photoEyes;
+  accessoryRow.hidden = cfg.skin !== 'robot'; // accessory anchors are calibrated to the robot sheet
   cutoutEl.checked = cfg.autoCutout;
   cutoutTolEl.value = String(cfg.cutoutTolerance);
   cutoutTolValEl.textContent = String(cfg.cutoutTolerance);
@@ -231,6 +340,7 @@ async function initSettings() {
   greetEnabledEl.checked = cfg.greetEnabled;
   weatherEnabledEl.checked = cfg.weatherEnabled;
   hourlyChimeEl.checked = cfg.hourlyChime;
+  autoMoveEl.checked = cfg.autoMove;
   accessoryButtons.forEach((b) => b.classList.toggle('active', b.dataset.accessory === cfg.accessory));
   affinityValue = cfg.affinity;
   renderAffinityDisplay();
@@ -267,6 +377,7 @@ async function initSettings() {
       b.classList.add('active');
       setCustomRows(b.dataset.skin === 'custom');
       accessoryRow.hidden = b.dataset.skin !== 'robot';
+      setMarkEyesRow();
       window.api.setConfig({ skin: b.dataset.skin as PetSkin });
     });
   });
@@ -281,10 +392,13 @@ async function initSettings() {
         skin: 'custom',
         customImagePath: r.path || '',
         customImageMode: selectedCustomMode(),
+        photoEyes: null, // a new photo invalidates the old eye marks
       });
       customStatusEl.textContent = window.PetricI18n.t(
         r.cutoutApplied ? 'settings.cutoutApplied' : 'settings.applied',
       );
+      savedPhotoEyes = null;
+      clearEyesBtn.hidden = true;
     } else {
       customStatusEl.classList.add('err');
       customStatusEl.textContent = r.error || window.PetricI18n.t('settings.cancelled');
@@ -299,6 +413,7 @@ async function initSettings() {
     b.addEventListener('click', () => {
       customModeButtons.forEach((x) => x.classList.remove('active'));
       b.classList.add('active');
+      setMarkEyesRow();
       window.api.setConfig({ customImageMode: b.dataset.mode as CustomImageMode });
     });
   });
@@ -321,7 +436,7 @@ async function initSettings() {
     await window.api.setConfig({ skin: 'cat', customImagePath: '' });
     skinButtons.forEach((x) => x.classList.toggle('active', x.dataset.skin === 'cat'));
     setCustomRows(false);
-    accessoryRow.hidden = true;
+    accessoryRow.hidden = true; // the illustrated cat has its face and silhouette baked in
     customStatusEl.textContent = window.PetricI18n.t('settings.cleared');
   });
 
@@ -379,9 +494,14 @@ async function initSettings() {
   hourlyChimeEl.addEventListener('change', () =>
     window.api.setConfig({ hourlyChime: hourlyChimeEl.checked }),
   );
+  autoMoveEl.addEventListener('change', () => window.api.setConfig({ autoMove: autoMoveEl.checked }));
 
   // Keep the affinity / focus / theme / stats UI in sync with changes made elsewhere (e.g. by the pet window)
   window.api.onConfigChanged((cfg) => {
+    skinButtons.forEach((b) => b.classList.toggle('active', b.dataset.skin === cfg.skin));
+    setCustomRows(cfg.skin === 'custom');
+    accessoryRow.hidden = cfg.skin !== 'robot';
+    setMarkEyesRow();
     affinityValue = cfg.affinity;
     renderAffinityDisplay();
     focusModeEl.checked = cfg.focusMode;
@@ -389,6 +509,7 @@ async function initSettings() {
     greetEnabledEl.checked = cfg.greetEnabled;
     weatherEnabledEl.checked = cfg.weatherEnabled;
     hourlyChimeEl.checked = cfg.hourlyChime;
+    autoMoveEl.checked = cfg.autoMove;
     themeButtons.forEach((b) => b.classList.toggle('active', b.dataset.theme === cfg.theme));
     accessoryButtons.forEach((b) => b.classList.toggle('active', b.dataset.accessory === cfg.accessory));
     document.documentElement.dataset.theme = cfg.theme;
@@ -396,6 +517,9 @@ async function initSettings() {
     cutoutTolEl.value = String(cfg.cutoutTolerance);
     cutoutTolValEl.textContent = String(cfg.cutoutTolerance);
     cutoutTolRow.hidden = !cfg.autoCutout;
+    savedPhotoEyes = cfg.photoEyes;
+    clearEyesBtn.hidden = !cfg.photoEyes;
+    if (eyesImg) drawEyesPreview();
     renderStats(cfg);
   });
 

@@ -37,6 +37,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   greetEnabled: true,
   weatherEnabled: true,
   hourlyChime: true,
+  photoEyes: null,
+  autoMove: true,
 };
 
 let cache: AppConfig | null = null;

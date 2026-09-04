@@ -1,6 +1,6 @@
 {
   "name": "petric",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Petric · 跨平台透明桌面宠物 / Cross-platform desktop pet (Electron + TypeScript + HTML5 Canvas)",
   "main": "dist/main/main.js",
   "author": "Petric Contributors",

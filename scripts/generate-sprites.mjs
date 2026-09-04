@@ -62,7 +62,9 @@ const STATES = {
   ],
 };
 
-// Three color palettes (cat / dog / dumpling)
+// Four color palettes. NOTE: the skin IDs are kept for config compatibility —
+// the 'dog' skin now renders a pixel FOX and 'default' renders a pixel RABBIT
+// (output files keep the historical dog.png / default.png names).
 const PALETTES = {
   cat: {
     body: [247, 155, 91, 255],
@@ -73,21 +75,24 @@ const PALETTES = {
     outline: [67, 40, 31, 255],
   },
   dog: {
-    body: [201, 138, 91, 255],
-    light: [247, 231, 212, 255],
-    ear: [138, 90, 51, 255],
-    nose: [58, 44, 38, 255],
-    whisker: [107, 74, 52, 255],
-    outline: [67, 40, 31, 255],
+    // Pixel fox (skin id 'dog')
+    body: [233, 121, 55, 255], // fox orange
+    light: [255, 244, 230, 255], // cream muzzle / chest / tail tip
+    ear: [255, 244, 230, 255],
+    nose: [56, 44, 42, 255],
+    whisker: [150, 84, 46, 255],
+    outline: [104, 48, 20, 255],
     pink: [247, 143, 176, 255],
+    dark: [70, 38, 24, 255], // ear tips
   },
   default: {
-    body: [167, 139, 250, 255],
-    light: [236, 220, 255, 255],
-    pink: [249, 168, 212, 255],
-    nose: [109, 79, 176, 255],
-    whisker: [107, 90, 143, 255],
-    outline: [70, 54, 94, 255],
+    // Pixel rabbit (skin id 'default')
+    body: [228, 229, 238, 255], // soft gray-white
+    light: [255, 255, 255, 255], // muzzle / belly / tail
+    pink: [255, 173, 193, 255], // inner ears / blush
+    nose: [255, 128, 150, 255], // pink nose
+    whisker: [150, 150, 168, 255],
+    outline: [98, 98, 124, 255],
   },
   robot: {
     body: [122, 136, 166, 255], // steel blue
@@ -225,8 +230,13 @@ function drawPet(c, pal, pose, kind) {
       fillTriangle(c, [[9.8, 13.5], [11, 9.9], [12.5, 13.1]], pal.pink);
       fillTriangle(c, [[22.2, 13.5], [21, 9.9], [19.5, 13.1]], pal.pink);
     } else if (kind === 'dog') {
-      fillEllipse(c, 9, 17, 2.4, 4.8, pal.ear);
-      fillEllipse(c, 23, 17, 2.4, 4.8, pal.ear);
+      // Fox: tall pointy ears, cream inner, dark tips
+      fillTriangle(c, [[7.6, 13.5], [11, 5.4], [14.6, 12.8]], pal.body);
+      fillTriangle(c, [[24.4, 13.5], [21, 5.4], [17.4, 12.8]], pal.body);
+      fillTriangle(c, [[9.2, 11.6], [11, 7.4], [13.2, 11.4]], pal.light);
+      fillTriangle(c, [[22.8, 11.6], [21, 7.4], [18.8, 11.4]], pal.light);
+      fillTriangle(c, [[10.2, 8.4], [11, 6.0], [12.1, 8.4]], pal.dark);
+      fillTriangle(c, [[21.8, 8.4], [21, 6.0], [19.9, 8.4]], pal.dark);
     } else if (kind === 'robot') {
       // Side antenna stubs + top antenna with a light
       fillRect(c, 5, 10, 8, 13, pal.outline);
@@ -236,8 +246,11 @@ function drawPet(c, pal, pose, kind) {
       line(c, 16, 10.2, 16, 5.2, pal.outline);
       fillEllipse(c, 16, 4.6, 1.3, 1.3, pal.pink);
     } else {
-      fillEllipse(c, 11.5, 11.5, 2.4, 2.6, pal.body);
-      fillEllipse(c, 20.5, 11.5, 2.4, 2.6, pal.body);
+      // Rabbit: two long upright ears with pink inner
+      fillEllipse(c, 12.2, 7.2, 2.2, 5.4, pal.body);
+      fillEllipse(c, 19.8, 7.2, 2.2, 5.4, pal.body);
+      fillEllipse(c, 12.2, 7.6, 1.0, 3.6, pal.pink);
+      fillEllipse(c, 19.8, 7.6, 1.0, 3.6, pal.pink);
     }
     fillEllipse(c, 16, hcy, 8.5, 7.5, pal.body);
     outlinePass(c, pal.outline);
@@ -250,8 +263,9 @@ function drawPet(c, pal, pose, kind) {
 
     // Snout
     if (kind === 'dog') {
-      fillEllipse(c, 16, 21.5, 4.2, 3, pal.light);
-      fillEllipse(c, 16, 19.8, 1.7, 1.3, pal.nose);
+      // Fox: slender cream muzzle + small dark nose
+      fillEllipse(c, 16, 22.2, 3.4, 2.4, pal.light);
+      fillEllipse(c, 16, 20.7, 1.5, 1.1, pal.nose);
     } else if (kind === 'cat') {
       fillEllipse(c, 16, 20.8, 3.2, 2.4, pal.light);
       fillTriangle(c, [[15.2, 19.2], [16.8, 19.2], [16, 20.4]], pal.nose);
@@ -261,8 +275,9 @@ function drawPet(c, pal, pose, kind) {
       fillEllipse(c, 12.8, 18.8, 1.3, 2, [78, 88, 110, 255]);
       fillEllipse(c, 19.2, 18.8, 1.3, 2, [78, 88, 110, 255]);
     } else {
-      fillEllipse(c, 16, 21.2, 3, 2.2, pal.light);
-      fillTriangle(c, [[15.4, 19.7], [16.6, 19.7], [16, 20.7]], pal.nose);
+      // Rabbit: white muzzle + pink nose
+      fillEllipse(c, 16, 21.4, 3.6, 2.6, pal.light);
+      fillTriangle(c, [[15.3, 19.6], [16.7, 19.6], [16, 20.8]], pal.nose);
     }
     line(c, 16, kind === 'cat' ? 20.4 : kind === 'dog' ? 20.8 : 20.7, 14.6, 21.9, pal.whisker);
     line(c, 16, kind === 'cat' ? 20.4 : kind === 'dog' ? 20.8 : 20.7, 17.4, 21.9, pal.whisker);
@@ -289,8 +304,15 @@ function drawPet(c, pal, pose, kind) {
     line(c, 23.5, 23 + dy, 26.5 + wag, 15.2 + dy, pal.body);
     fillEllipse(c, 27 + wag, 15.5 + dy, 1.3, 1.3, pal.body);
   } else if (kind === 'dog') {
-    line(c, 23.5, 22 + dy, 27, 19 + dy, pal.outline);
-    line(c, 23.5, 22.5 + dy, 27.5, 19.5 + dy, pal.body);
+    // Bushy two-tone fox tail (wags in idle)
+    fillEllipse(c, 24.3 + wag, 20 + dy, 1.9, 3.4, pal.body);
+    fillEllipse(c, 25.6 + wag, 23 + dy, 1.7, 3.2, pal.body);
+    fillEllipse(c, 26.4 + wag, 26 + dy, 1.5, 2.4, pal.body);
+    fillEllipse(c, 26.5 + wag, 28 + dy, 1.2, 1.6, pal.light); // white tip
+  } else if (kind === 'default') {
+    // Fluffy round rabbit tail
+    fillEllipse(c, 25 + wag, 27 + dy, 1.8, 1.8, pal.body);
+    fillEllipse(c, 25 + wag, 27 + dy, 1.1, 1.1, pal.light);
   }
 
   // Feet (lifted alternately while walking)
@@ -309,9 +331,13 @@ function drawPet(c, pal, pose, kind) {
     fillTriangle(c, [[9.8, 8 + dy], [11, 4.4 + dy], [12.5, 7.6 + dy]], pal.pink);
     fillTriangle(c, [[22.2, 8 + dy], [21, 4.4 + dy], [19.5, 7.6 + dy]], pal.pink);
   } else if (kind === 'dog') {
-    // Floppy ears
-    fillEllipse(c, 9, 12.5 + dy, 2.4, 4.8, pal.ear);
-    fillEllipse(c, 23, 12.5 + dy, 2.4, 4.8, pal.ear);
+    // Fox: tall pointy ears, cream inner, dark tips
+    fillTriangle(c, [[8.2, 9 + dy], [11, 1.6 + dy], [14.2, 8.2 + dy]], pal.body);
+    fillTriangle(c, [[23.8, 9 + dy], [21, 1.6 + dy], [17.8, 8.2 + dy]], pal.body);
+    fillTriangle(c, [[9.4, 7.6 + dy], [11, 3.6 + dy], [13.2, 7.4 + dy]], pal.light);
+    fillTriangle(c, [[22.6, 7.6 + dy], [21, 3.6 + dy], [18.8, 7.4 + dy]], pal.light);
+    fillTriangle(c, [[10.0, 4.6 + dy], [11, 2.0 + dy], [12.0, 4.4 + dy]], pal.dark);
+    fillTriangle(c, [[22.0, 4.6 + dy], [21, 2.0 + dy], [20.0, 4.4 + dy]], pal.dark);
   } else if (kind === 'robot') {
     // Side antenna stubs (stick out past the head) + top antenna with a light
     // fillRect needs integer coordinates (typed-array indexing drops fractional indices)
@@ -323,13 +349,11 @@ function drawPet(c, pal, pose, kind) {
     line(c, 16, 6 + dy, 16, 2 + dy, pal.outline);
     fillEllipse(c, 16, 1.6 + dy, 1.2, 1.2, pal.pink);
   } else {
-    // Dumpling's small round ears + antenna
-    fillEllipse(c, 11.5, 6 + dy, 2.4, 2.6, pal.body);
-    fillEllipse(c, 20.5, 6 + dy, 2.4, 2.6, pal.body);
-    line(c, 16, 6 + dy, 16, 2.5 + dy, pal.outline);
-    // Antenna light bar (integer coords; fractional fillRect is dropped by typed arrays)
-    fillRect(c, 15, 2 + Math.round(dy), 17, 3 + Math.round(dy), pal.light);
-    fillRect(c, 14, 2 + Math.round(dy), 17, 2 + Math.round(dy), pal.light);
+    // Rabbit: two long upright ears with pink inner
+    fillEllipse(c, 12.4, 4.6 + dy, 2.2, 4.8, pal.body);
+    fillEllipse(c, 19.6, 4.6 + dy, 2.2, 4.8, pal.body);
+    fillEllipse(c, 12.4, 5.0 + dy, 1.0, 3.4, pal.pink);
+    fillEllipse(c, 19.6, 5.0 + dy, 1.0, 3.4, pal.pink);
   }
 
   // Head
@@ -340,8 +364,9 @@ function drawPet(c, pal, pose, kind) {
 
   // Snout (details drawn on top of the outline)
   if (kind === 'dog') {
-    fillEllipse(c, 16, 17 + dy, 4.2, 3, pal.light);
-    fillEllipse(c, 16, 15.4 + dy, 1.7, 1.3, pal.nose);
+    // Fox: slender cream muzzle + small dark nose
+    fillEllipse(c, 16, 17.4 + dy, 3.2, 2.5, pal.light);
+    fillEllipse(c, 16, 15.4 + dy, 1.5, 1.1, pal.nose);
   } else if (kind === 'cat') {
     fillEllipse(c, 16, 16.2 + dy, 3.2, 2.4, pal.light);
     fillTriangle(c, [[15.2, 14.7 + dy], [16.8, 14.7 + dy], [16, 15.9 + dy]], pal.nose);
@@ -353,8 +378,9 @@ function drawPet(c, pal, pose, kind) {
     line(c, 11, 22.6 + dy, 21, 22.6 + dy, pal.whisker);
     fillEllipse(c, 16, 21.2 + dy, 1.1, 1.1, pal.nose);
   } else {
-    fillEllipse(c, 16, 16.6 + dy, 3, 2.2, pal.light);
-    fillTriangle(c, [[15.4, 15.2 + dy], [16.6, 15.2 + dy], [16, 16.2 + dy]], pal.nose);
+    // Rabbit: white muzzle + pink nose
+    fillEllipse(c, 16, 17.2 + dy, 3.4, 2.6, pal.light);
+    fillTriangle(c, [[15.2, 15.5 + dy], [16.8, 15.5 + dy], [16, 16.8 + dy]], pal.nose);
   }
 
   // Small "w" mouth (not drawn while sleeping)

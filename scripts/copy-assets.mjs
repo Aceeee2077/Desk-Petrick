@@ -14,11 +14,13 @@ mkdirSync(join(ROOT, 'dist', 'renderer'), { recursive: true });
 const files = [
   'index.html',
   'settings.html',
+  'chat.html',
   'screenshot.html',
   'settings-shot.html',
   'pet3d-test.html',
   'styles.css',
   'settings.css',
+  'chat.css',
 ];
 for (const f of files) {
   cpSync(join(ROOT, 'src', 'renderer', f), join(ROOT, 'dist', 'renderer', f));

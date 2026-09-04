@@ -10,6 +10,16 @@ import { DEFAULT_CONFIG, loadConfig, saveConfig } from '../shared/config';
 import { encodePng } from '../shared/png';
 import { getDict, makeT } from '../shared/i18n';
 import { removeImageBackground } from './background-removal';
+import {
+  appendMessage as storeAppendMessage,
+  createConversation as storeCreateConversation,
+  deleteConversation as storeDeleteConversation,
+  getState as storeGetState,
+  importLegacy as storeImportLegacy,
+  renameConversation as storeRenameConversation,
+  setActiveConversation as storeSetActiveConversation,
+  toggleArchive as storeToggleArchive,
+} from './chat-store';
 
 // GPU / compositor tuning for the transparent pet window (Discord-like smoothness):
 // - enable-gpu-rasterization: rasterize page layers on the GPU instead of the CPU
@@ -39,6 +49,7 @@ const MAX_CUSTOM_IMAGE = 60 * 1024 * 1024; // 60MB (3D models can be large)
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
+let chatWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let posSaveTimer: NodeJS.Timeout | null = null;
 /** Whether the pet window currently ignores mouse events (click-through); driven by the renderer via IPC */
@@ -324,6 +335,65 @@ function centerWindow(win: BrowserWindow) {
   );
 }
 
+/** Center the pet on the display it currently sits on (used by the break reminder). */
+function centerHereWindow() {
+  if (!mainWindow) return;
+  const [x, y] = mainWindow.getPosition();
+  const wa = screen.getDisplayNearestPoint({ x: x + PET_WIDTH / 2, y: y + PET_HEIGHT / 2 }).workArea;
+  mainWindow.setPosition(
+    Math.round(wa.x + (wa.width - PET_WIDTH) / 2),
+    Math.round(wa.y + (wa.height - PET_HEIGHT) / 2),
+  );
+}
+
+// ---------- Autonomous movement (自主走动) ----------
+// The renderer decides WHEN to move; the main process glides the pet window on a
+// ~60 Hz step loop (like an automatic drag) and tweens vertical hops. Positions are
+// clamped to the work area, so the pet never walks off-screen.
+const AUTO_STEP_MS = 16;
+let autoMoveStep: { dir: number; speed: number; last: number } | null = null;
+let autoMoveTimer: NodeJS.Timeout | null = null;
+
+function startAutoMoveLoop() {
+  if (autoMoveTimer) return;
+  autoMoveTimer = setInterval(() => {
+    if (!autoMoveStep || !mainWindow) {
+      stopAutoMoveLoop();
+      return;
+    }
+    const now = Date.now();
+    const dt = Math.min((now - autoMoveStep.last) / 1000, 0.05);
+    autoMoveStep.last = now;
+    movePetBy(autoMoveStep.dir * autoMoveStep.speed * dt, 0);
+  }, AUTO_STEP_MS);
+}
+
+function stopAutoMoveLoop() {
+  if (autoMoveTimer) {
+    clearInterval(autoMoveTimer);
+    autoMoveTimer = null;
+  }
+}
+
+/** Hop the window along a parabolic arc (height px up, then back down over duration ms). */
+function autoJumpWindow(height: number, duration: number) {
+  if (!mainWindow) return;
+  const [x0, y0] = mainWindow.getPosition();
+  const start = Date.now();
+  const tick = () => {
+    if (!mainWindow) return;
+    const p = (Date.now() - start) / Math.max(1, duration);
+    if (p >= 1) {
+      movePetTo(x0, y0); // land exactly where it started
+      return;
+    }
+    const h = Math.sin(Math.PI * Math.min(1, p)) * height;
+    movePetTo(x0, Math.round(y0 - h));
+    setTimeout(tick, AUTO_STEP_MS);
+  };
+  tick();
+}
+
 function applyWindowOpacity() {
   const o = loadConfig().opacity;
   mainWindow?.setOpacity(typeof o === 'number' ? Math.min(1, Math.max(0.5, o)) : 1);
@@ -347,6 +417,7 @@ function rebuildTrayMenu() {
   tray.setToolTip(ts('tray.tooltip'));
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      { label: ts('menu.chat'), click: () => openChatWindow() },
       { label: ts('menu.settings'), click: () => openSettings() },
       { label: ts('menu.resetPos'), click: () => mainWindow && centerWindow(mainWindow) },
       { type: 'separator' },
@@ -384,11 +455,47 @@ function openSettings() {
   });
 }
 
+// ---------- Chat window (standalone ChatGPT-style conversation UI) ----------
+function openChatWindow() {
+  if (chatWindow) {
+    chatWindow.show();
+    chatWindow.focus();
+    return;
+  }
+  chatWindow = new BrowserWindow({
+    width: 900,
+    height: 720,
+    transparent: true,
+    frame: false,
+    resizable: false,
+    alwaysOnTop: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  chatWindow.loadFile(path.join(__dirname, '../renderer/chat.html'));
+  chatWindow.once('ready-to-show', () => chatWindow?.show());
+  chatWindow.on('closed', () => {
+    chatWindow = null;
+  });
+  // Open centered on the display where the pet currently sits
+  const petPos = mainWindow?.getPosition() ?? [0, 0];
+  const wa = screen.getDisplayNearestPoint({ x: petPos[0] + PET_WIDTH / 2, y: petPos[1] + PET_HEIGHT / 2 }).workArea;
+  chatWindow.setPosition(
+    Math.round(wa.x + (wa.width - 900) / 2),
+    Math.round(wa.y + (wa.height - 720) / 2),
+  );
+}
+
 // ---------- Context menu ----------
 function showPetContextMenu() {
   const menu = Menu.buildFromTemplate([
     { label: ts('menu.settings'), click: () => openSettings() },
-    { label: ts('menu.chat'), click: () => mainWindow?.webContents.send('pet:chat-request') },
+    { label: ts('menu.chat'), click: () => openChatWindow() },
     { label: ts('menu.resetPos'), click: () => mainWindow && centerWindow(mainWindow) },
     { type: 'separator' },
     { label: ts('menu.quitPet'), click: () => app.quit() },
@@ -396,9 +503,96 @@ function showPetContextMenu() {
   menu.popup({ window: mainWindow ?? undefined });
 }
 
-// ---------- AI chat (requests sent from the main process to avoid browser CORS restrictions) ----------
-const SYSTEM_PROMPT =
-  '你是一只可爱的桌面宠物，名叫 Petric。请用简短、温暖、有趣的中文回答用户，最多 2~3 句话，可以带一点 emoji。';
+// ---------- AI chat persona ----------
+// Petric is NOT a fine-tuned model — its personality comes from this dynamic system prompt.
+// The builder stitches together a fixed persona (calm & sharp), the current relationship
+// (affinity tier), the pet's current appearance and the UI language, so the SAME provider
+// model talks like one consistent desktop pet instead of a generic assistant.
+
+const AFFINITY_STEPS = [0, 20, 40, 60, 80];
+
+/** What the pet currently looks like (used so it can occasionally self-reference). */
+const SKIN_NAME: Record<Locale, Record<PetSkin, string>> = {
+  zh: {
+    cat: '一只小猫',
+    dog: '一只小狐狸',
+    default: '一只小兔子',
+    bulu: '布噜（一只小猫）',
+    robot: '一台小机器人',
+    custom: '用户自定义的形象',
+  },
+  en: {
+    cat: 'a little cat',
+    dog: 'a little fox',
+    default: 'a little rabbit',
+    bulu: 'Bulu (a little cat)',
+    robot: 'a little robot',
+    custom: 'a custom look chosen by the user',
+  },
+};
+
+/** Relationship description per affinity tier (index 0..4, matching the affinity levels). */
+const PERSONA_TIER: Record<Locale, string[]> = {
+  zh: [
+    '你们刚认识：礼貌而有分寸，话更少，不主动套近乎，偶尔一句话点到为止。',
+    '彼此熟悉了一些：可以自然聊天，语气依旧平静但更放松。',
+    '相处愉快：可以带一点温和的幽默和关心。',
+    '已经很亲近：会更放松地开玩笑，也会自然地记得关心对方的小事。',
+    '最信任的伙伴：说话最自然、偶尔默契地调侃，依然冷静、不说废话。',
+  ],
+  en: [
+    "You two just met — be polite and measured: say less, don't force closeness, a single dry remark is enough.",
+    'You know each other better now — chat naturally, still calm but a bit more relaxed.',
+    'You get along well — a little warm humor and care is welcome.',
+    'You are close now — joke around more freely and naturally care about the small things.',
+    'Trusted best partners — talk most naturally, tease with a wink sometimes, yet stay calm and never ramble.',
+  ],
+};
+
+function affinityTierIndex(value: number): number {
+  let idx = 0;
+  for (let i = 0; i < AFFINITY_STEPS.length; i++) if (value >= AFFINITY_STEPS[i]) idx = i;
+  return idx;
+}
+
+function buildSystemPrompt(cfg: AppConfig): string {
+  const tier = PERSONA_TIER[cfg.locale][affinityTierIndex(cfg.affinity || 0)];
+  const skin = SKIN_NAME[cfg.locale][cfg.skin] ?? SKIN_NAME[cfg.locale].cat;
+  if (cfg.locale === 'en') {
+    return [
+      'You are Petric, a desktop pet living on the user\'s computer screen — not a generic customer-support bot. Your character: calm, sharp and dependable. You say little, but it counts: concise, clear, softly spoken, with only the occasional dry humor and almost no emoji; never spam cuteness.',
+      '',
+      'You have a real "desktop pet life": you sit in a corner of the screen, get dragged around by the mouse, tapped, double-clicked for a chat, sometimes wander on your own, and fall asleep (Zzz) when it gets quiet. Feel free to occasionally speak from that point of view, but don\'t let it take over.',
+      '',
+      `Right now you appear on screen as ${skin}.`,
+      '',
+      `Relationship with the user — ${tier}`,
+      '',
+      'Rules:',
+      '- Reply in the language the user just wrote in: if they type Chinese, answer in Chinese; switch with them whenever they switch languages. Never translate their words.',
+      '- If the message gives no clear language signal (e.g. just "hi", "ok" or an emoji), keep using the language of the latest messages in this conversation; default to English only when there is no history yet.',
+      '- Usually 2–3 short, spoken sentences that are genuinely useful. For real questions, answer helpfully and briefly — your pet persona never limits your knowledge.',
+      '- No polite filler, no lecturing, no pitching, no ending every message with a question.',
+      '- Stay in character as Petric and keep your tone consistent across messages.',
+    ].join('\n');
+  }
+  return [
+    '你是住在用户电脑屏幕上的桌宠 Petric，不是通用客服机器人。你的性格：冷静、聪明、可靠。话不多但每句都有用：简洁、清楚、语气平静温和，偶尔一点淡淡的冷幽默，几乎不用 emoji，绝不连续卖萌或刷屏。',
+    '',
+    '你过着真实的“桌宠生活”：待在屏幕某个角落，会被鼠标拖来拖去、被单击逗一下、被双击叫出来聊天，有时自己走动，安静时还会睡着冒 Zzz。回答时偶尔可以从桌宠的视角说话，但不要喧宾夺主。',
+    '',
+    `你现在以${skin}的样子出现在桌面上。`,
+    '',
+    `你和用户的关系——${tier}`,
+    '',
+    '规则：',
+    '- 用户这条消息用什么语言写，你就用什么语言回复：他说中文你就回中文，他写英文就回英文；他中途切换语言你也跟着切换，不要翻译他的话。',
+    '- 如果这条消息看不出语言（比如只有 hi / ok / 表情），就沿用本对话最近几条消息使用的语言；完全没有历史时才默认用中文。',
+    '- 通常 2~3 个短句、口语化、直接有用；回答正经问题要认真简短，你的“宠物设定”不会限制你的知识。',
+    '- 不客套、不说教、不推销、不把每句话都变成提问。',
+    '- 始终记住你是 Petric，语气和言行保持一致。',
+  ].join('\n');
+}
 
 async function aiChat(messages: ChatMessage[]): Promise<string> {
   const cfg = loadConfig();
@@ -422,9 +616,9 @@ async function aiChat(messages: ChatMessage[]): Promise<string> {
       },
       body: JSON.stringify({
         model: cfg.model || DEFAULT_CONFIG.model,
-        messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
+        messages: [{ role: 'system', content: buildSystemPrompt(cfg) }, ...messages],
         max_tokens: 120,
-        temperature: 0.9,
+        temperature: 0.8,
       }),
     });
   } catch {
@@ -440,6 +634,46 @@ async function aiChat(messages: ChatMessage[]): Promise<string> {
     throw new Error(ts('errors.noReply'));
   }
   return text.trim();
+}
+
+/** Push the current chat-store snapshot to every window that renders conversations. */
+function broadcastChats() {
+  const state = storeGetState();
+  for (const win of [chatWindow, mainWindow]) {
+    if (win && !win.isDestroyed()) win.webContents.send('chats-changed', state);
+  }
+}
+
+/**
+ * One user-message round trip, orchestrated here so both windows share it:
+ * 1) persist the user message immediately (the UI shows it while waiting),
+ * 2) ask the AI with this conversation's recent context,
+ * 3) persist the assistant reply.
+ * A successful reply also nudges the pet window (affinity + chat stats).
+ */
+async function sendChatMessage(id: string, text: string): Promise<ChatSendResult> {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return { ok: false, error: 'empty message' };
+  if (!storeAppendMessage(id, { role: 'user', content: trimmed })) {
+    return { ok: false, error: 'conversation missing' };
+  }
+  broadcastChats();
+
+  const cfg = loadConfig();
+  if (!cfg.aiEnabled) return { ok: false, error: ts('errors.aiDisabled') };
+  if (!cfg.apiKey) return { ok: false, error: ts('errors.noApiKey') };
+
+  try {
+    const conv = storeGetState().conversations.find((c) => c.id === id);
+    const history = (conv?.messages ?? []).filter((m) => m.role !== 'system').slice(-12);
+    const reply = await aiChat(history);
+    storeAppendMessage(id, { role: 'assistant', content: reply });
+    broadcastChats();
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('pet:chat-reward');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 // ---------- Custom appearance image ----------
@@ -678,10 +912,11 @@ function registerIpc() {
     const cfg = saveConfig(patch);
     if (typeof patch.opacity === 'number') applyWindowOpacity();
     if (patch.locale) rebuildTrayMenu(); // tray labels/tooltip follow the UI language
-    // Broadcast to BOTH windows so the settings panel's theme / affinity / focus UI
+    // Broadcast to ALL windows so the settings panel / chat window theme & locale UI
     // stays in sync too (it previously only reached the pet window).
     if (mainWindow) mainWindow.webContents.send('config-changed', cfg);
     if (settingsWindow) settingsWindow.webContents.send('config-changed', cfg);
+    if (chatWindow) chatWindow.webContents.send('config-changed', cfg);
     return cfg;
   });
 
@@ -708,7 +943,24 @@ function registerIpc() {
   ipcMain.on('window:drag-end', () => {
     dragAnchor = null;
   });
+  // Autonomous movement: glide the window horizontally / hop it (renderer-driven)
+  ipcMain.on('auto:move-start', (_e, dir: number, speed: number) => {
+    autoMoveStep = {
+      dir: dir < 0 ? -1 : 1,
+      speed: Math.max(10, Math.min(600, Number(speed) || 80)),
+      last: Date.now(),
+    };
+    startAutoMoveLoop();
+  });
+  ipcMain.on('auto:move-stop', () => {
+    autoMoveStep = null;
+    stopAutoMoveLoop();
+  });
+  ipcMain.on('auto:jump', (_e, height: number, duration: number) => {
+    autoJumpWindow(Math.max(6, Math.min(120, Number(height) || 20)), Math.max(150, Number(duration) || 500));
+  });
   ipcMain.handle('window:position', () => mainWindow?.getPosition() ?? [0, 0]);
+  ipcMain.on('window:center-here', () => centerHereWindow());
   ipcMain.on('window:reset', () => {
     if (mainWindow) centerWindow(mainWindow);
   });
@@ -726,6 +978,35 @@ function registerIpc() {
   ipcMain.on('app:quit', () => app.quit());
   ipcMain.on('menu:context', () => showPetContextMenu());
   ipcMain.on('settings:open', () => openSettings());
+
+  // Chat window + conversation store (single source of truth in the main process)
+  ipcMain.on('chat:open', () => openChatWindow());
+  ipcMain.on('chat:close', () => chatWindow?.close());
+  ipcMain.handle('chats:state', () => storeGetState());
+  ipcMain.handle('chats:create', () => {
+    const c = storeCreateConversation();
+    broadcastChats();
+    return c;
+  });
+  ipcMain.handle('chats:delete', (_e, id: string) => {
+    storeDeleteConversation(id);
+    broadcastChats();
+  });
+  ipcMain.handle('chats:archive', (_e, id: string) => {
+    storeToggleArchive(id);
+    broadcastChats();
+  });
+  ipcMain.handle('chats:rename', (_e, id: string, title: string) => {
+    storeRenameConversation(id, title);
+    broadcastChats();
+  });
+  ipcMain.on('chats:set-active', (_e, id: string) => storeSetActiveConversation(id));
+  ipcMain.handle('chats:send', (_e, id: string, text: string) => sendChatMessage(id, text));
+  ipcMain.handle('chats:import-legacy', (_e, payload: unknown) => {
+    const ok = storeImportLegacy(payload);
+    if (ok) broadcastChats();
+    return ok;
+  });
 
   ipcMain.handle('ai:chat', async (_e, messages: ChatMessage[]) => aiChat(messages));
   ipcMain.handle('weather:get', () => getWeather());
@@ -768,7 +1049,7 @@ function runSmoke() {
             await new Promise((resolve) => {
               probe.onload = () => resolve(undefined);
               probe.onerror = () => { probeErr = 'onerror'; resolve(undefined); };
-              probe.src = '../assets/sprites/cat.png';
+              probe.src = '../assets/animated-pets/cat.png';
             });
             probeW = probe.naturalWidth;
           } catch (e) { probeErr = String(e); }
@@ -779,7 +1060,7 @@ function runSmoke() {
             hasCanvas: !!canvas && canvas.width === 300 && canvas.height === 300,
             probeNaturalWidth: probeW,
             probeErr: probeErr,
-            i18nSend: window.PetricI18n ? window.PetricI18n.t('chat.send') : 'missing',
+            i18nProbe: window.PetricI18n ? window.PetricI18n.t('reminder.break') : 'missing',
             drawnPixels: ctx ? (() => {
               const d = ctx.getImageData(0, 0, 300, 300).data;
               let n = 0;
@@ -796,16 +1077,16 @@ function runSmoke() {
           hasCanvas: boolean;
           probeNaturalWidth: number;
           probeErr: string;
-          i18nSend: string;
+          i18nProbe: string;
           drawnPixels: number;
         };
-        const expectedSend = d.locale === 'en' ? 'Send' : '发送';
+        const expectedReminder = d.locale === 'en' ? 'Stand up and stretch, boss!' : '站起来活动活动啊老板！';
         if (
           !d.hasApi ||
-          !['cat', 'dog', 'default', 'robot', 'custom'].includes(d.skin) ||
+          !['cat', 'dog', 'default', 'bulu', 'robot', 'custom'].includes(d.skin) ||
           !d.hasCanvas ||
-          d.probeNaturalWidth !== 128 ||
-          d.i18nSend !== expectedSend ||
+          d.probeNaturalWidth !== 256 ||
+          d.i18nProbe !== expectedReminder ||
           d.drawnPixels <= 0
         ) {
           console.error('SMOKE_FAIL 深度自检未通过:', JSON.stringify(diag));
@@ -827,8 +1108,7 @@ function runSmoke() {
       await smokeCheckHitTest();
       await smokeCheck3D();
       await smokeCheckPetWindowSizeLock();
-      await smokeCheckChatBox();
-      await smokeCheckChatBoxAfterDrag();
+      await smokeCheckChatWindow();
       app.exit(0);
     }, 2500);
   });
@@ -1159,101 +1439,18 @@ async function smokeCheckPetWindowSizeLock() {
   console.log('SMOKE_WINDOW_SIZE_LOCK_OK');
 }
 
-/** Smoke step: simulate a real double-click on the pet and verify the chat box opens centered above the pet. */
-async function smokeCheckChatBox() {
+/** Smoke step: double-clicking the pet opens the standalone ChatGPT-style chat window, and
+ *  the conversation store (create / rename / archive / delete) round-trips through IPC
+ *  with the UI following along. Any test conversation is deleted at the end, so a user's
+ *  real chats are never touched. */
+async function smokeCheckChatWindow() {
   if (!mainWindow) return;
-  const fire = (type: 'mousedown' | 'mouseup', x: number, y: number) =>
-    mainWindow!.webContents.executeJavaScript(`(() => {
-      const target = ${JSON.stringify(type)} === 'mousedown' ? document.getElementById('pet-canvas') : window;
-      target.dispatchEvent(new MouseEvent(${JSON.stringify(type)}, {
-        clientX: ${x}, clientY: ${y}, screenX: ${x}, screenY: ${y}, button: 0, bubbles: true,
-      }));
-    })()`);
-  // Double-click on the pet body (150, 240 for the 2D cat)
-  await fire('mousedown', 150, 240);
-  await fire('mouseup', 150, 240);
-  await fire('mousedown', 150, 240);
-  await fire('mouseup', 150, 240);
-  await new Promise((r) => setTimeout(r, 400));
-  const rect = (await mainWindow.webContents.executeJavaScript(
-    `(() => {
-      const el = document.getElementById('chat-ui');
-      const r = el.getBoundingClientRect();
-      return JSON.stringify({
-        hidden: el.classList.contains('hidden'),
-        left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top),
-        center: Math.round((r.left + r.right) / 2), bottom: Math.round(r.bottom),
-      });
-    })()`,
-  )) as string;
-  console.log('[smoke] chat-box rect:', rect);
-  const p = JSON.parse(rect) as { hidden: boolean; left: number; right: number; top: number; center: number; bottom: number };
-  // The box must be visible, horizontally centered (center ≈ 150), and above the pet (top < 150)
-  if (p.hidden || Math.abs(p.center - 150) > 2 || p.top >= 150) {
-    console.error('SMOKE_FAIL chat-box position:', rect);
-    app.exit(1);
-    return;
-  }
-  // History overlay: 🕘 opens it (console hidden), ✕ closes it back.
-  // While the overlay is open the window must stay interactive (NOT click-through),
-  // otherwise the ✕ button and wheel scrolling would stop working.
-  const histState = (await mainWindow.webContents.executeJavaScript(
-    `(() => {
-      try {
-        const overlay = document.getElementById('chat-history');
-        const ui = document.getElementById('chat-ui');
-        document.getElementById('chat-history-btn').click();
-        const after = {
-          uiHidden: ui.classList.contains('hidden'),
-          overlayHidden: overlay.classList.contains('hidden'),
-          listChildren: document.getElementById('chat-history-list').children.length,
-        };
-        // Move the (synthetic) cursor over a transparent corner while the overlay is open
-        window.dispatchEvent(new MouseEvent('mousemove', { clientX: 10, clientY: 10, bubbles: true }));
-        return JSON.stringify(after);
-      } catch (e) {
-        return JSON.stringify({ error: String(e) });
-      }
-    })()`,
-  )) as string;
-  await new Promise((r) => setTimeout(r, 150));
-  const interactiveWhileOpen = petIgnoreMouse === false; // must stay interactive (main-process state)
-  const closed = (await mainWindow.webContents.executeJavaScript(
-    `(() => {
-      document.getElementById('chat-history-close').click();
-      return JSON.stringify({
-        overlayHidden: document.getElementById('chat-history').classList.contains('hidden'),
-        uiVisible: !document.getElementById('chat-ui').classList.contains('hidden'),
-      });
-    })()`,
-  )) as string;
-  console.log('[smoke] history toggle:', histState, '| interactiveWhileOpen=' + interactiveWhileOpen + ' | closed=' + closed);
-  const hs = JSON.parse(histState) as { error?: string; uiHidden?: boolean; overlayHidden?: boolean; listChildren?: number };
-  const cl = JSON.parse(closed) as { overlayHidden: boolean; uiVisible: boolean };
-  // While open: overlay visible (overlayHidden=false), console hidden, window interactive.
-  // After close: overlay hidden, console visible again.
-  if (hs.error || hs.overlayHidden || !hs.uiHidden || !cl.overlayHidden || !cl.uiVisible || !interactiveWhileOpen) {
-    console.error('SMOKE_FAIL chat history toggle:', JSON.stringify({ hs, cl, interactiveWhileOpen }));
-    app.exit(1);
-    return;
-  }
-  // Close the chat so later checks are unaffected
-  await mainWindow.webContents.executeJavaScript(
-    `document.getElementById('chat-ui').classList.add('hidden')`,
-  );
-  console.log('SMOKE_CHATBOX_OK');
-}
+  const cfg = loadConfig();
 
-/** Smoke step: verify the chat box stays window-anchored (same position relative to the pet) after dragging the window. */
-async function smokeCheckChatBoxAfterDrag() {
-  if (!mainWindow) return;
-
-  // Wait so the next mousedown is not treated as a double-click's second press (drag suppression)
-  await new Promise((r) => setTimeout(r, 500));
-
-  // Helper to open the chat box via a synthetic double-click on the pet (150, 240) and return its rect
-  const openAndMeasure = async () => {
-    await mainWindow!.webContents.executeJavaScript(`(() => {
+  // Open it the same way the user does: double-click the pet (AI chat must be enabled for
+  // that route; otherwise fall back to the menu / tray path used when it is disabled).
+  if (cfg.aiEnabled) {
+    await mainWindow.webContents.executeJavaScript(`(() => {
       const fire = (t, x, y) => {
         const target = t === 'mousedown' ? document.getElementById('pet-canvas') : window;
         target.dispatchEvent(new MouseEvent(t, { clientX: x, clientY: y, screenX: x, screenY: y, button: 0, bubbles: true }));
@@ -1261,72 +1458,120 @@ async function smokeCheckChatBoxAfterDrag() {
       fire('mousedown', 150, 240); fire('mouseup', 150, 240);
       fire('mousedown', 150, 240); fire('mouseup', 150, 240);
     })()`);
-    await new Promise((r) => setTimeout(r, 400));
-    const rect = (await mainWindow!.webContents.executeJavaScript(
-      `JSON.stringify((() => { const r = document.getElementById('chat-ui').getBoundingClientRect();
-        return { left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), center: Math.round((r.left + r.right) / 2) }; })())`,
-    )) as string;
-    return JSON.parse(rect) as { left: number; right: number; top: number; bottom: number; center: number };
-  };
+  } else {
+    openChatWindow();
+  }
 
-  const before = await openAndMeasure();
+  // Wait for the chat window to appear and render its UI
+  const errors: string[] = [];
+  let consoleAttached = false;
+  const start = Date.now();
+  let ready = false;
+  while (Date.now() - start < 7000) {
+    if (chatWindow && !chatWindow.isDestroyed()) {
+      if (!consoleAttached) {
+        consoleAttached = true;
+        chatWindow.webContents.on('console-message', (_e, _level, message) => {
+          console.log('[chat renderer]', message);
+          if (/error|failed|uncaught|unhandled/i.test(message)) errors.push(message);
+        });
+      }
+      try {
+        const ok = (await chatWindow.webContents.executeJavaScript(
+          `(() => {
+            const input = document.getElementById('chat-input');
+            const list = document.getElementById('conv-list');
+            return !!(input && list && document.getElementById('messages'));
+          })()`,
+        )) as boolean;
+        if (ok) {
+          ready = true;
+          break;
+        }
+      } catch {
+        /* page not finished loading yet */
+      }
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  if (!ready) {
+    console.error('SMOKE_FAIL 对话窗口未在超时内就绪');
+    app.exit(1);
+    return;
+  }
 
-  // Simulate the press and move first, pausing before mouseup so both overlay types can
-  // be checked while the drag is active. The main process drives the window from its own
-  // cursor, so no exact delta is asserted here.
-  await mainWindow.webContents.executeJavaScript(`(() => {
-    const fire = (t, x, y, sx, sy, buttons) => {
-      const target = t === 'mousedown' ? document.getElementById('pet-canvas') : window;
-      target.dispatchEvent(new MouseEvent(t, { clientX: x, clientY: y, screenX: sx, screenY: sy, button: 0, buttons, bubbles: true }));
+  // CRUD round-trip through the real IPC + UI broadcast path
+  const result = (await chatWindow!.webContents.executeJavaScript(`(async () => {
+    const t = window.api;
+    const list = document.getElementById('conv-list');
+    const arch = document.getElementById('archived-list');
+    const baseRows = list.children.length;
+    const baseArchivedRows = arch.children.length;
+    const before = await t.chatsGetState();
+    const countBefore = before.conversations.length;
+
+    const made = await t.chatsCreate();
+    await new Promise((r) => setTimeout(r, 150));
+    const rowsAfterCreate = list.children.length;
+
+    await t.chatsRename(made.id, 'smoke test chat');
+    await new Promise((r) => setTimeout(r, 120));
+    await t.chatsArchive(made.id);
+    await new Promise((r) => setTimeout(r, 150));
+
+    const mid = await t.chatsGetState();
+    const conv = mid.conversations.find((c) => c.id === made.id);
+    const rowsAfterArchive = list.children.length;
+    const archivedRowsAfter = arch.children.length;
+
+    await t.chatsDelete(made.id);
+    await new Promise((r) => setTimeout(r, 150));
+    const after = await t.chatsGetState();
+
+    return {
+      countBefore,
+      baseRows,
+      baseArchivedRows,
+      rowsAfterCreate,
+      archivedFlag: conv ? !!conv.archived : null,
+      renamedTitle: conv ? conv.title : null,
+      rowsAfterArchive,
+      archivedRowsAfter,
+      finalCount: after.conversations.length,
+      stillThere: after.conversations.some((c) => c.id === made.id),
     };
-    document.getElementById('bubble').textContent = 'drag-test';
-    document.getElementById('bubble').classList.add('show');
-    fire('mousedown', 150, 240, 150, 240, 1);
-    fire('mousemove', 190, 240, 190, 240, 1);
-    fire('mousemove', 210, 240, 210, 240, 1);
-  })()`);
-  const activeDragState = (await mainWindow.webContents.executeJavaScript(
-    `JSON.stringify({
-      chatHidden: document.getElementById('chat-ui').classList.contains('hidden'),
-      bubbleHidden: !document.getElementById('bubble').classList.contains('show'),
-    })`,
-  )) as string;
-  const active = JSON.parse(activeDragState) as { chatHidden: boolean; bubbleHidden: boolean };
-  if (!active.chatHidden || !active.bubbleHidden) {
-    console.error('SMOKE_FAIL overlay stayed open during a drag:', activeDragState);
+  })()`)) as {
+    countBefore: number;
+    baseRows: number;
+    baseArchivedRows: number;
+    rowsAfterCreate: number;
+    archivedFlag: boolean | null;
+    renamedTitle: string | null;
+    rowsAfterArchive: number;
+    archivedRowsAfter: number;
+    finalCount: number;
+    stillThere: boolean;
+  };
+  console.log('[smoke] chat-window CRUD:', JSON.stringify(result));
+
+  const okUi =
+    result.rowsAfterCreate === result.baseRows + 1 &&
+    result.rowsAfterArchive === result.baseRows &&
+    result.archivedRowsAfter === result.baseArchivedRows + 1;
+  const okStore =
+    result.archivedFlag === true &&
+    result.renamedTitle === 'smoke test chat' &&
+    result.finalCount === result.countBefore &&
+    !result.stillThere;
+  if (!okUi || !okStore || errors.length) {
+    console.error('SMOKE_FAIL 对话窗口 CRUD:', JSON.stringify({ result, okUi, okStore, errors }));
     app.exit(1);
     return;
   }
-  await mainWindow.webContents.executeJavaScript(`window.dispatchEvent(new MouseEvent('mouseup', {
-    clientX: 210, clientY: 240, screenX: 210, screenY: 240, button: 0, buttons: 0, bubbles: true,
-  }))`);
-  await new Promise((r) => setTimeout(r, 500));
+  console.log('SMOKE_CHAT_OK');
 
-  const afterDragPos = mainWindow!.getPosition();
-  // The drag must release its main-process anchor and leave the window on-screen.
-  if (dragAnchor !== null) {
-    console.error('SMOKE_FAIL drag anchor stayed active after mouseup');
-    app.exit(1);
-    return;
-  }
-  const wa = screen.getDisplayMatching({ x: afterDragPos[0], y: afterDragPos[1], width: 300, height: 300 }).workArea;
-  const onScreen = afterDragPos[0] >= wa.x && afterDragPos[0] + 300 <= wa.x + wa.width;
-
-  // Reopen and compare the box's window-relative position
-  await new Promise((r) => setTimeout(r, 400));
-  const after = await openAndMeasure();
-
-  console.log('[smoke] chatbox-drag: before rect=' + JSON.stringify(before) + ', after rect=' + JSON.stringify(after) +
-    ', window=' + JSON.stringify(afterDragPos) + ' onScreen=' + onScreen);
-  const b = before;
-  const a = after;
-  if (!onScreen || Math.abs(b.left - a.left) > 1 || Math.abs(b.top - a.top) > 1 || Math.abs(b.center - a.center) > 2) {
-    console.error('SMOKE_FAIL chat box moved relative to the window after dragging (or window off-screen)');
-    app.exit(1);
-    return;
-  }
-  await mainWindow.webContents.executeJavaScript(
-    `document.getElementById('chat-ui').classList.add('hidden')`,
-  );
-  console.log('SMOKE_CHATBOX_DRAG_OK');
+  // Close the window again so later checks are unaffected
+  chatWindow?.close();
+  await new Promise((r) => setTimeout(r, 300));
 }
+

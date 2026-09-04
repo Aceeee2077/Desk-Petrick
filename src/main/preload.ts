@@ -29,11 +29,28 @@ const api: PetApi = {
       ipcRenderer.removeListener('config-changed', listener);
     };
   },
-  onOpenChatRequest: (cb) => {
-    const listener = () => cb();
-    ipcRenderer.on('pet:chat-request', listener);
+  openChat: () => ipcRenderer.send('chat:open'),
+  closeChatWindow: () => ipcRenderer.send('chat:close'),
+  chatsGetState: () => ipcRenderer.invoke('chats:state'),
+  chatsCreate: () => ipcRenderer.invoke('chats:create'),
+  chatsDelete: (id) => ipcRenderer.invoke('chats:delete', id),
+  chatsArchive: (id) => ipcRenderer.invoke('chats:archive', id),
+  chatsRename: (id, title) => ipcRenderer.invoke('chats:rename', id, title),
+  setActiveChat: (id) => ipcRenderer.send('chats:set-active', id),
+  chatsSend: (id, text) => ipcRenderer.invoke('chats:send', id, text),
+  chatsImportLegacy: (payload) => ipcRenderer.invoke('chats:import-legacy', payload),
+  onChatsChanged: (cb) => {
+    const listener = (_e: Electron.IpcRendererEvent, state: ChatState) => cb(state);
+    ipcRenderer.on('chats-changed', listener);
     return () => {
-      ipcRenderer.removeListener('pet:chat-request', listener);
+      ipcRenderer.removeListener('chats-changed', listener);
+    };
+  },
+  onChatReward: (cb) => {
+    const listener = () => cb();
+    ipcRenderer.on('pet:chat-reward', listener);
+    return () => {
+      ipcRenderer.removeListener('pet:chat-reward', listener);
     };
   },
   getCustomImage: () => ipcRenderer.invoke('custom:get'),
@@ -41,6 +58,10 @@ const api: PetApi = {
   clearCustomImage: () => ipcRenderer.invoke('custom:clear'),
   getI18n: () => ipcRenderer.invoke('i18n:get'),
   getWeather: () => ipcRenderer.invoke('weather:get'),
+  autoMoveStart: (dir, speed) => ipcRenderer.send('auto:move-start', dir, speed),
+  autoMoveStop: () => ipcRenderer.send('auto:move-stop'),
+  autoJump: (height, duration) => ipcRenderer.send('auto:jump', height, duration),
+  centerHere: () => ipcRenderer.send('window:center-here'),
 };
 
 contextBridge.exposeInMainWorld('api', api);

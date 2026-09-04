@@ -6,10 +6,11 @@
 //  - State machine: idle / walking (dragging) / sleeping (30s of inactivity) / click (click jump)
 //  - Eyes follow the mouse + periodic blinking + floating Zzz while sleeping
 //  - Drag to move the window (absolute positioning in screen coordinates, no cumulative drift)
-//  - Single click: speech bubble / double click: AI chat (history kept in localStorage)
+//  - Single click: speech bubble / double click: opens the AI chat window (conversations
+//    are stored in the main process and shared with the ChatGPT-style chat window)
 //  - Affinity (好感度): clicking / dragging / chatting raise affinity, shown as hearts in a corner badge
 //  - Focus mode (专注模式): while enabled, reminds the user every N minutes to stand up and stretch
-//  - Accessories (装扮系统): procedural pixel hat / scarf / glasses for the robot sheet
+//  - Accessories (装扮系统): procedural pixel hat / scarf / glasses for the built-in pixel sheets
 //  - Idle actions (随机小动作): the pet randomly yawns / stretches / scratches / dances while idle
 //  - Life assistant (生活助手): proactive greetings, weather reports and an hourly chime
 //  - Hotkeys: Ctrl+Shift+P opens settings; Esc quits the pet
@@ -19,14 +20,6 @@
 
 const canvas = document.getElementById('pet-canvas') as HTMLCanvasElement;
 const bubbleEl = document.getElementById('bubble') as HTMLDivElement;
-const chatUiEl = document.getElementById('chat-ui') as HTMLDivElement;
-const chatInputEl = document.getElementById('chat-input') as HTMLInputElement;
-const chatSendEl = document.getElementById('chat-send') as HTMLButtonElement;
-const chatReplyEl = document.getElementById('chat-reply') as HTMLDivElement;
-const chatHistoryBtn = document.getElementById('chat-history-btn') as HTMLButtonElement;
-const chatHistoryEl = document.getElementById('chat-history') as HTMLDivElement;
-const chatHistoryList = document.getElementById('chat-history-list') as HTMLDivElement;
-const chatHistoryClose = document.getElementById('chat-history-close') as HTMLButtonElement;
 const affinityBadgeEl = document.getElementById('affinity-badge') as HTMLDivElement;
 
 const ctx = canvas.getContext('2d')!;
@@ -87,6 +80,8 @@ let config: AppConfig = {
   greetEnabled: true,
   weatherEnabled: true,
   hourlyChime: true,
+  photoEyes: null,
+  autoMove: true,
 };
 
 // Smoke mode (main loads index.html?smoke=1): skip auto-played idle actions so
@@ -106,6 +101,8 @@ let dragging = false;
 let dragCandidate = false;
 let dragMoved = false;
 let dragStartScreen = { x: 0, y: 0 };
+let lastDragScreenX = 0;
+let facingDir: -1 | 1 = 1;
 let lastClickTime = 0;
 let lastMouseDownTime = 0;
 let suppressDrag = false; // set on the second press of a double-click so it can't micro-drag the window
@@ -222,16 +219,17 @@ function startReminder() {
 }
 
 function remind() {
-  // Wake the pet and play a little jump so the reminder is hard to miss
+  // Make the reminder impossible to miss: stop any autonomous walk, dash to the
+  // CENTER of the current screen, do a visible hop, then show the bubble.
   lastActivity = Date.now();
+  endAutoMove(); // stop gliding so the centering sticks
+  nextWanderAt = Date.now() + 25000; // stay at the center while the reminder shows
   wake();
   setState('click');
+  window.api.centerHere(); // teleport to the middle of the screen
+  window.api.autoJump(20, 480); // a lively hop for attention
   const text = '⏰ ' + window.PetricI18n.t('reminder.break');
-  if (!chatUiEl.classList.contains('hidden')) {
-    showChatReply(text);
-  } else {
-    showBubble(text, { ms: 6000 });
-  }
+  showBubble(text, { ms: 7000 });
   playChime();
 }
 
@@ -255,7 +253,10 @@ function computeActionFx(): {
   mouth: number;
   eyesClosed: boolean;
 } | null {
-  if (!currentAction || config.skin === 'custom' || state !== 'idle') return null;
+  if (!currentAction || state !== 'idle') return null;
+  // 3D modes render on their own WebGL canvas, so the 2D action transform can't apply.
+  // 2D custom images (single / sheet) DO get the actions (dance / stretch / tilt…).
+  if (pet3dActive && pet3d) return null;
   const t = (performance.now() - currentAction.t0) / 1000;
   const T = ACTION_DURATION[currentAction.type];
   const p = Math.min(1, t / T);
@@ -290,7 +291,71 @@ function stopAction() {
     currentAction = null;
     nextActionAt = Date.now() + 6000 + Math.random() * 10000;
   }
+  endAutoMove(); // a real interaction also interrupts any autonomous walk
   nextGreetAt = Date.now() + GREET_IDLE_MS; // a real interaction also defers the proactive greeting
+}
+
+// ---------- Autonomous movement (自主走动) ----------
+// The pet decides on its own to walk / run / hop around the desktop. The renderer
+// orchestrates (it owns the state machine) and the MAIN process glides the window
+// (auto:move-start/stop) or hops it (auto:jump). Movement only happens while the
+// pet is awake and idle, and any interaction interrupts it immediately.
+let autoMoveIntent: { dir: number; speed: number } | null = null;
+let autoMoveTimer: number | undefined;
+let nextWanderAt = Date.now() + 5000 + Math.random() * 8000; // first wander after ~5-13s of idle
+
+/** Glide the window in `dir` (-1 left / +1 right) for `durationMs`. */
+function beginAutoMove(dir: number, speed: number, durationMs: number) {
+  endAutoMove();
+  facingDir = dir < 0 ? -1 : 1;
+  autoMoveIntent = { dir, speed };
+  window.api.autoMoveStart(dir, speed);
+  autoMoveTimer = window.setTimeout(endAutoMove, durationMs);
+}
+
+/** Stop the autonomous glide (and the walking pose that belongs to it). */
+function endAutoMove() {
+  if (autoMoveIntent) {
+    autoMoveIntent = null;
+    window.clearTimeout(autoMoveTimer);
+    window.api.autoMoveStop();
+    if (state === 'walking') setState('idle');
+  }
+}
+
+/** Walk (run=false) or run (run=true) in a random direction for a short while. */
+function startWanderActivity(run: boolean) {
+  const dir = Math.random() < 0.5 ? -1 : 1;
+  const speed = run ? 170 + Math.random() * 90 : 70 + Math.random() * 60;
+  const duration = run ? 900 + Math.random() * 1300 : 1600 + Math.random() * 2400;
+  // Running pets often start with a little hop for extra life
+  if (run && Math.random() < 0.6) window.api.autoJump(12, 320);
+  setState('walking');
+  beginAutoMove(dir, speed, duration);
+}
+
+/** Hop in place: the window jumps along a parabolic arc while the pet plays its jump pose. */
+function startJumpActivity() {
+  const height = 22 + Math.random() * 18;
+  setState('click'); // the jump animation; stepFrame returns to idle afterwards
+  window.api.autoJump(height, 500);
+}
+
+/** Pick the next autonomous activity from a weighted pool (autoMove must be on). */
+function pickAutoActivity() {
+  const roll = Math.random();
+  if (roll < 0.3) {
+    startWanderActivity(false); // walk
+  } else if (roll < 0.5) {
+    startWanderActivity(true); // run
+  } else if (roll < 0.66) {
+    startJumpActivity(); // hop
+  } else if (roll < 0.86) {
+    // a familiar idle action (yawn / stretch / scratch / dance)
+    currentAction = { type: ACTION_TYPES[Math.floor(Math.random() * ACTION_TYPES.length)], t0: Date.now() };
+    nextActionAt = Date.now() + 8000 + Math.random() * 10000;
+  }
+  // otherwise: rest until the next scheduled activity
 }
 
 // ---------- Proactive chat (主动搭话) ----------
@@ -299,7 +364,13 @@ const GREET_IDLE_MS = 10 * 60 * 1000;
 let nextGreetAt = Date.now() + GREET_IDLE_MS;
 
 function maybeGreet(now: number) {
-  if (config.greetEnabled && now >= nextGreetAt && !dragging && chatUiEl.classList.contains('hidden') && !currentAction) {
+  if (
+    config.greetEnabled &&
+    now >= nextGreetAt &&
+    !dragging &&
+    !autoMoveIntent && // don't talk while it's walking around
+    !currentAction
+  ) {
     nextGreetAt = now + GREET_IDLE_MS;
     wake(); // it was probably sleeping — wake it so the greeting is visible
     showBubble(rand(window.PetricI18n.tArray('greet.lines')), { ms: 4000 });
@@ -391,11 +462,7 @@ function chime() {
   lastActivity = Date.now();
   wake();
   setState('click'); // a little jump to draw attention
-  if (!chatUiEl.classList.contains('hidden')) {
-    showChatReply(text);
-  } else {
-    showBubble(text, { ms: 5000 });
-  }
+  showBubble(text, { ms: 5000 });
   playChime();
   scheduleChime();
 }
@@ -455,18 +522,98 @@ function isOverPet(clientX: number, clientY: number): boolean {
   return hitAlpha[hy * hitCanvas.width + hx] > 20; // alpha threshold, ignores semi-transparent edges
 }
 
-// Built-in appearance cache (preloaded for zero-wait switching). The first three
-// skins keep their historical IDs for config compatibility, but now use the
-// supplied transparent character art; the robot remains an animated sprite sheet.
+// Built-in appearance cache (preloaded for zero-wait switching). The four illustrated
+// animals use 64px cells with baked-in faces; the procedural robot keeps its 32px cells.
+// dog & default remain as legacy IDs so existing fox / rabbit configs keep working.
 const sheets: Record<string, HTMLImageElement> = {};
-const BUILT_IN_ART: Partial<Record<PetSkin, string>> = {
-  cat: '../assets/sprite-sources/cat.png',
-  dog: '../assets/sprite-sources/fox.png',
-  default: '../assets/sprite-sources/rabbit.png',
+const ILLUSTRATED_PET_SHEETS: Partial<Record<PetSkin, string>> = {
+  cat: '../assets/animated-pets/cat.png',
+  dog: '../assets/animated-pets/fox.png',
+  default: '../assets/animated-pets/rabbit.png',
+  bulu: '../assets/animated-pets/bulu.png',
 };
 
-function usesBuiltInArt(skin: PetSkin): boolean {
-  return Boolean(BUILT_IN_ART[skin]);
+// Which illustrated sheets face LEFT in their source art (most AI pose boards come out
+// facing right). Such pets must be mirrored when moving RIGHT — the opposite of the rest.
+const ILLUSTRATED_FACES_LEFT: Partial<Record<PetSkin, boolean>> = {
+  bulu: true,
+};
+
+function isIllustratedPet(skin: PetSkin): boolean {
+  return Boolean(ILLUSTRATED_PET_SHEETS[skin]);
+}
+
+// ---------- Illustrated idle stabilization ----------
+// AI pose boards sometimes contain one stray idle frame (body shifted / face changed).
+// Played at the normal idle rate it reads as fast left-right swaying and blinking.
+// After each illustrated sheet loads we analyse its idle row: if one frame is a clear
+// outlier we drop it from the cycle, and illustrated idle is slowed to a calm 3 fps.
+const ILLUSTRATED_IDLE_PLANS: Record<string, { fps: number; drop: number }> = {};
+
+function analyzeIdleRow(skin: PetSkin, img: HTMLImageElement) {
+  ILLUSTRATED_IDLE_PLANS[skin] = { fps: 3, drop: -1 };
+  try {
+    const fw = Math.max(1, Math.round(img.naturalWidth / SHEET.cols));
+    const fh = Math.max(1, Math.round(img.naturalHeight / SHEET.rows));
+    const c = document.createElement('canvas');
+    c.width = fw;
+    c.height = fh;
+    const cx = c.getContext('2d', { willReadFrequently: true })!;
+    const masks: Uint8Array[] = [];
+    for (let col = 0; col < SHEET.cols; col++) {
+      cx.clearRect(0, 0, fw, fh);
+      cx.drawImage(img, col * fw, 0, fw, fh, 0, 0, fw, fh);
+      const d = cx.getImageData(0, 0, fw, fh).data;
+      const m = new Uint8Array(256); // 16x16 occupancy mask
+      for (let y = 0; y < 16; y++) {
+        for (let x = 0; x < 16; x++) {
+          let n = 0;
+          for (let by = Math.floor((y * fh) / 16); by < Math.ceil(((y + 1) * fh) / 16) && by < fh; by++) {
+            for (let bx = Math.floor((x * fw) / 16); bx < Math.ceil(((x + 1) * fw) / 16) && bx < fw; bx++) {
+              if (d[(by * fw + bx) * 4 + 3] > 40) n++;
+            }
+          }
+          m[y * 16 + x] = n > 0 ? 1 : 0;
+        }
+      }
+      masks.push(m);
+    }
+    const diff = (a: Uint8Array, b: Uint8Array) => {
+      let s = 0;
+      for (let i = 0; i < 256; i++) if (a[i] !== b[i]) s++;
+      return s;
+    };
+    const scores = masks.map((m, i) => {
+      let s = 0;
+      for (let j = 0; j < masks.length; j++) if (j !== i) s += diff(m, masks[j]);
+      return s / (masks.length - 1);
+    });
+    const maxIdx = scores.indexOf(Math.max(...scores));
+    const others = scores.filter((_, i) => i !== maxIdx);
+    const meanOther = others.length ? others.reduce((a, b) => a + b, 0) / others.length : 0;
+    // Drop only a clear outlier (large absolute AND relative difference)
+    if (scores[maxIdx] > 45 && scores[maxIdx] > meanOther * 1.5) {
+      ILLUSTRATED_IDLE_PLANS[skin] = { fps: 3, drop: maxIdx };
+    }
+  } catch {
+    /* keep the default 4-frame idle on any analysis failure */
+  }
+}
+
+/** The ordered idle source-columns to cycle for the current skin (drops the outlier). */
+function illustratedIdleCycle(): number[] | null {
+  if (!isIllustratedPet(config.skin)) return null;
+  const plan = ILLUSTRATED_IDLE_PLANS[config.skin];
+  if (!plan) return null;
+  const cols: number[] = [];
+  for (let i = 0; i < SHEET.cols; i++) if (i !== plan.drop) cols.push(i);
+  return cols;
+}
+
+/** Source column of the current idle frame (accounts for the dropped outlier). */
+function currentIdleSourceColumn(): number {
+  const cycle = illustratedIdleCycle();
+  return cycle ? cycle[frameIndex % cycle.length] : frameIndex;
 }
 
 // Click speech lines come from the i18n dictionary ('lines' key, locale-aware);
@@ -482,9 +629,12 @@ function clamp(v: number, min: number, max: number): number {
 
 // ---------- Sprites ----------
 function loadSheets() {
-  (['cat', 'dog', 'default', 'robot'] as PetSkin[]).forEach((s) => {
+  (['cat', 'dog', 'default', 'bulu', 'robot'] as PetSkin[]).forEach((s) => {
     const img = new Image();
-    img.src = BUILT_IN_ART[s] ?? `../assets/sprites/${s}.png`;
+    img.src = ILLUSTRATED_PET_SHEETS[s] ?? `../assets/sprites/${s}.png`;
+    if (ILLUSTRATED_PET_SHEETS[s]) {
+      img.onload = () => analyzeIdleRow(s, img);
+    }
     sheets[s] = img;
   });
 }
@@ -510,13 +660,17 @@ function enterSleep() {
 
 function stepFrame(dt: number) {
   const meta = SHEET.states[state];
-  const fps = Math.max(1, meta.fps * config.animSpeed);
+  // Illustrated pets idle on a calmer, stabilised cycle (see analyzeIdleRow)
+  const plan = state === 'idle' ? ILLUSTRATED_IDLE_PLANS[config.skin] : undefined;
+  const cycle = plan && isIllustratedPet(config.skin) ? illustratedIdleCycle() : null;
+  const frameCount = cycle ? cycle.length : meta.frames;
+  const fps = Math.max(1, (plan && cycle ? plan.fps : meta.fps) * config.animSpeed);
   frameAcc += dt;
   justWrapped = false;
   const frameDur = 1 / fps;
   while (frameAcc >= frameDur) {
     frameAcc -= frameDur;
-    frameIndex = (frameIndex + 1) % meta.frames;
+    frameIndex = (frameIndex + 1) % frameCount;
     justWrapped = true;
   }
   // After a full click animation loop, return to the previous idle state
@@ -531,16 +685,29 @@ function stepFrame(dt: number) {
 function update(dt: number) {
   const now = Date.now();
 
-  // Sleep check: 30s of inactivity and not dragging / chatting
-  if (now - lastActivity > SLEEP_MS && state !== 'sleeping' && !dragging && chatUiEl.classList.contains('hidden')) {
+  // Sleep check: 30s of inactivity and not dragging. With autonomous movement
+  // enabled the pet stays awake and keeps wandering instead of sleeping.
+  if (
+    !config.autoMove &&
+    now - lastActivity > SLEEP_MS &&
+    state !== 'sleeping' &&
+    !dragging
+  ) {
     currentAction = null;
+    endAutoMove();
     enterSleep();
   }
 
-  // Random idle actions: while awake and idle (and not in smoke mode) the pet
-  // occasionally yawns / stretches / scratches / dances on its own.
-  if (!IS_SMOKE && state === 'idle' && !dragging && chatUiEl.classList.contains('hidden')) {
-    if (!currentAction && now >= nextActionAt) {
+  // Autonomous activity scheduler: while awake and idle the pet occasionally walks,
+  // runs or hops around the desktop on its own (autoMove) — or, without autoMove,
+  // it just performs the familiar idle actions.
+  if (!IS_SMOKE && state === 'idle' && !dragging) {
+    if (config.autoMove) {
+      if (!currentAction && !autoMoveIntent && now >= nextWanderAt) {
+        nextWanderAt = now + 4000 + Math.random() * 6000;
+        pickAutoActivity();
+      }
+    } else if (!currentAction && now >= nextActionAt) {
       currentAction = { type: ACTION_TYPES[Math.floor(Math.random() * ACTION_TYPES.length)], t0: now };
     }
     if (currentAction && now - currentAction.t0 >= ACTION_DURATION[currentAction.type] * 1000) {
@@ -767,6 +934,7 @@ function draw() {
 
   const isCustom = config.skin === 'custom';
   const fx = computeActionFx();
+  fxEyesClosed = fx ? fx.eyesClosed : false;
 
   // Idle actions rotate / stretch the pet around its feet; the pet, its accessory,
   // the eyes and the yawn mouth all live inside the same transform so they stay attached.
@@ -787,9 +955,9 @@ function draw() {
     drawBuiltInPet();
   }
 
-  // Face overlays and frame-calibrated accessories only belong to the procedural
-  // robot sheet. The cat, fox and rabbit art already includes its complete face.
-  if (!isCustom && !usesBuiltInArt(config.skin)) {
+  // Illustrated pets already contain their faces. Robot-only overlays are calibrated
+  // to the old 32px frame coordinate system and must not be drawn over the new art.
+  if (!isCustom && !isIllustratedPet(config.skin)) {
     drawAccessory();
     drawEyes(fx ? fx.eyesClosed : false);
     if (fx && fx.mouth > 0) drawYawnMouth(fx.mouth);
@@ -815,30 +983,35 @@ function draw() {
   if (!(pet3dActive && pet3d)) buildHitMap();
 }
 
-/** Draw a built-in appearance (transparent character art or the robot sheet). */
+/** Draw a built-in pixel sprite sheet (four illustrated animals or robot). */
 function drawBuiltInPet() {
   const img = sheets[config.skin];
   if (img && img.complete && img.naturalWidth > 0) {
-    if (usesBuiltInArt(config.skin)) {
-      drawSingleImagePet(img, 160, 150);
-      return;
-    }
     const meta = SHEET.states[state];
-    const sx = frameIndex * SHEET.frameW;
-    const sy = meta.row * SHEET.frameH;
+    const illustrated = isIllustratedPet(config.skin);
+    const frameW = illustrated ? Math.round(img.naturalWidth / SHEET.cols) : SHEET.frameW;
+    const frameH = illustrated ? Math.round(img.naturalHeight / SHEET.rows) : SHEET.frameH;
+    const scale = illustrated ? 2 : SHEET.scale;
+    const dw = frameW * scale;
+    const dh = frameH * scale;
+    const dx = 150 - dw / 2;
+    const dy = 300 - dh - 4;
+    // Idle frames of stabilised illustrated pets cycle over a subset of source columns
+    const sx = (state === 'idle' ? currentIdleSourceColumn() : frameIndex) * frameW;
+    const sy = meta.row * frameH;
     ctx.imageSmoothingEnabled = false; // keep the pixel art sharp
-    ctx.drawImage(
-      img,
-      sx,
-      sy,
-      SHEET.frameW,
-      SHEET.frameH,
-      PET_X,
-      PET_Y,
-      SHEET.frameW * SHEET.scale,
-      SHEET.frameH * SHEET.scale,
-    );
-    currentPetTop = PET_Y;
+    ctx.save();
+    // Mirror the illustrated sheet so the pet always faces its movement direction.
+    // Sheets that natively face LEFT (e.g. bulu) mirror when moving RIGHT instead.
+    const mirror =
+      illustrated && (facingDir < 0 ? !ILLUSTRATED_FACES_LEFT[config.skin] : ILLUSTRATED_FACES_LEFT[config.skin] === true);
+    if (mirror) {
+      ctx.translate(300, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(img, sx, sy, frameW, frameH, dx, dy, dw, dh);
+    ctx.restore();
+    currentPetTop = dy;
   } else {
     // Placeholder while the sprite image is still loading
     ctx.fillStyle = 'rgba(255,255,255,0.92)';
@@ -871,14 +1044,14 @@ function drawCustomPet() {
     ctx.drawImage(cs.img, sx, sy, cs.frameW, cs.frameH, dx, dy, dw, dh);
     currentPetTop = dy;
   } else {
-    drawSingleImagePet(cs.img, 140, 120);
+    drawSingleImagePet(cs.img, 140, 120, true); // photo pets get the eye overlay
   }
 
   ctx.restore();
 }
 
 /** Draw one transparent character image with lightweight state animation. */
-function drawSingleImagePet(img: HTMLImageElement, maxWidth: number, maxHeight: number) {
+function drawSingleImagePet(img: HTMLImageElement, maxWidth: number, maxHeight: number, isPhoto = false) {
   const t = performance.now() / 1000;
   const iw = img.naturalWidth;
   const ih = img.naturalHeight;
@@ -915,6 +1088,84 @@ function drawSingleImagePet(img: HTMLImageElement, maxWidth: number, maxHeight: 
   ctx.translate(150, 300 - 4 + yOff);
   ctx.scale(scaleX, scaleY);
   ctx.drawImage(img, -dw / 2, -dh, dw, dh);
+
+  // Photo-pet eyes: drawn in the image's LOCAL space (same transform as the photo),
+  // so the pupils stay glued to the marked spots through the bob / squash and the
+  // idle-action rotation applied further up the transform stack.
+  if (isPhoto && config.photoEyes) {
+    drawPhotoEyesLocal(-dw / 2, -dh, dw, dh, 300 - 4 + yOff, scaleX, scaleY);
+  }
+}
+
+// ---------- Photo-pet eyes (眼睛跟随) ----------
+// The user marks the two eye positions once in Settings (normalized 0..1); we
+// overlay animated pupils on those spots so the photo's eyes follow the cursor
+// and blink — the same trick the built-in pets use.
+let fxEyesClosed = false; // set each frame from the idle action (yawn closes the eyes)
+
+/** Draw the photo-eye overlay in the image's local coordinate space. */
+function drawPhotoEyesLocal(
+  lx: number,
+  ly: number,
+  lw: number,
+  lh: number,
+  translateY: number,
+  scaleX: number,
+  scaleY: number,
+) {
+  const pe = config.photoEyes!;
+  const eyeR = Math.max(2, Math.min(lw, lh) * 0.04);
+  const e1 = { x: lx + pe.x1 * lw, y: ly + pe.y1 * lh };
+  const e2 = { x: lx + pe.x2 * lw, y: ly + pe.y2 * lh };
+  const head = { x: (e1.x + e2.x) / 2, y: (e1.y + e2.y) / 2 };
+  // Convert the window-space cursor into this local space (inverse of translate+scale)
+  const lmX = (mouse.x - 150) / scaleX;
+  const lmY = (mouse.y - translateY) / scaleY;
+  // Pupil offset toward the cursor (capped so it stays inside the eye)
+  let dx = lmX - head.x;
+  let dy = lmY - head.y;
+  const d = Math.hypot(dx, dy) || 1;
+  const off = Math.min(eyeR * 0.65, Math.hypot(dx, dy));
+  dx = (dx / d) * off;
+  dy = (dy / d) * off;
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  if (fxEyesClosed) {
+    // Closed-eye arcs (during the yawn action)
+    ctx.strokeStyle = 'rgba(30,20,15,0.9)';
+    ctx.lineWidth = Math.max(1.5, eyeR * 0.5);
+    [e1, e2].forEach((e) => {
+      ctx.beginPath();
+      ctx.moveTo(e.x - eyeR * 1.1, e.y + eyeR * 0.5);
+      ctx.quadraticCurveTo(e.x, e.y - eyeR * 0.8, e.x + eyeR * 1.1, e.y + eyeR * 0.5);
+      ctx.stroke();
+    });
+  } else if (!blinking) {
+    // Pupils follow the cursor + white highlight
+    ctx.fillStyle = 'rgba(30,20,15,0.92)';
+    [e1, e2].forEach((e) => {
+      ctx.beginPath();
+      ctx.arc(e.x + dx, e.y + dy, eyeR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.beginPath();
+      ctx.arc(e.x + dx - eyeR * 0.35, e.y + dy - eyeR * 0.35, eyeR * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(30,20,15,0.92)';
+    });
+  } else {
+    // Blink: a horizontal line across each eye
+    ctx.strokeStyle = 'rgba(30,20,15,0.92)';
+    ctx.lineWidth = Math.max(1.5, eyeR * 0.45);
+    [e1, e2].forEach((e) => {
+      ctx.beginPath();
+      ctx.moveTo(e.x - eyeR * 1.1, e.y);
+      ctx.lineTo(e.x + eyeR * 1.1, e.y);
+      ctx.stroke();
+    });
+  }
+  ctx.restore();
 }
 
 // ---------- Auto cutout (自动抠图) ----------
@@ -1160,9 +1411,9 @@ let typingTimer: number | undefined;
 let deferredBubble: { text: string; opts: { ms?: number; typing?: boolean } } | null = null;
 
 function showBubble(text: string, opts: { ms?: number; typing?: boolean } = {}) {
-  // An AI request can finish while the pet is being dragged. Do not let its reply
-  // re-open an overlay that travels with the transparent window; show it once the
-  // drag has ended instead.
+  // A bubble can be requested while the pet is being dragged (reminder / weather /
+  // chime / greeting). Do not let it open an overlay that travels with the transparent
+  // window; show it once the drag has ended instead.
   if (dragging) {
     deferredBubble = { text, opts };
     return;
@@ -1190,110 +1441,6 @@ function showBubble(text: string, opts: { ms?: number; typing?: boolean } = {}) 
 function hideBubble() {
   window.clearInterval(typingTimer);
   bubbleEl.classList.remove('show');
-}
-
-// ---------- AI Chat ----------
-const HISTORY_KEY = 'petric.chat.history';
-
-function loadHistory(): ChatMessage[] {
-  try {
-    const v = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-    return Array.isArray(v) ? (v as ChatMessage[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveHistory(h: ChatMessage[]) {
-  try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(h.slice(-20)));
-  } catch {
-    /* ignore */
-  }
-}
-
-/** Render the latest AI reply (or a status line) INSIDE the chat console, above the input. */
-function showChatReply(text: string, isError = false) {
-  chatReplyEl.textContent = text;
-  chatReplyEl.classList.toggle('err', isError);
-  chatReplyEl.classList.remove('hidden');
-}
-
-/** Rebuild the full history overlay from localStorage. */
-function renderChatHistory() {
-  const hist = loadHistory();
-  chatHistoryList.textContent = '';
-  if (!hist.length) {
-    const empty = document.createElement('div');
-    empty.className = 'msg empty';
-    empty.textContent = window.PetricI18n.t('chat.historyEmpty');
-    chatHistoryList.appendChild(empty);
-    return;
-  }
-  for (const m of hist) {
-    const el = document.createElement('div');
-    el.className = m.role === 'user' ? 'msg user' : 'msg ai';
-    el.textContent = m.content;
-    chatHistoryList.appendChild(el);
-  }
-  chatHistoryList.scrollTop = chatHistoryList.scrollHeight;
-}
-
-function openChat() {
-  // The window must stay interactive while the chat input is open (it may currently be click-through)
-  if (!overPet) {
-    overPet = true;
-    window.api.setClickThrough(false);
-    canvas.style.cursor = 'grab';
-  }
-  // A newly opened chat supersedes any reply that was waiting for a previous drag to end.
-  deferredBubble = null;
-  // Hide the speech bubble so it doesn't overlap the chat console
-  hideBubble();
-  // Close any leftover history overlay and show the console
-  chatHistoryEl.classList.add('hidden');
-  chatUiEl.classList.remove('hidden');
-  // Preview the last AI reply (if any) inside the console
-  const hist = loadHistory();
-  const lastAi = [...hist].reverse().find((m) => m.role === 'assistant');
-  if (lastAi) showChatReply(lastAi.content);
-  chatInputEl.focus();
-}
-
-function closeChat() {
-  chatUiEl.classList.add('hidden');
-  chatHistoryEl.classList.add('hidden');
-  hideBubble();
-}
-
-async function sendChat() {
-  const text = chatInputEl.value.trim();
-  if (!text) return;
-  chatInputEl.value = '';
-  const hist = loadHistory();
-  hist.push({ role: 'user', content: text });
-  saveHistory(hist);
-
-  // While the chat is open, replies render inside the console (never in the speech bubble),
-  // so they can't be covered by the input or travel with the window during a drag.
-  if (chatHistoryEl.classList.contains('hidden')) {
-    showChatReply(window.PetricI18n.t('bubble.thinking'));
-  }
-  try {
-    const reply = await window.api.aiChat(hist.slice(-12));
-    hist.push({ role: 'assistant', content: reply });
-    saveHistory(hist);
-    config.statsChats = (config.statsChats || 0) + 1; // interaction stats
-    addAffinity(2); // chatting with the pet makes you closer
-    if (chatHistoryEl.classList.contains('hidden')) {
-      // If a drag started while waiting, the console is hidden; just refresh the history data
-      showChatReply(reply);
-    } else {
-      renderChatHistory(); // history overlay is open: show the exchange there
-    }
-  } catch (err) {
-    showChatReply('😿 ' + (err instanceof Error ? err.message : String(err)), true);
-  }
 }
 
 // ---------- Sound (Web Audio synthesis, a short "meow") ----------
@@ -1357,11 +1504,6 @@ function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return;
   // Per-pixel hit: ignore when the cursor is not on the pet (transparent areas pass clicks to the desktop)
   if (!isOverPet(e.clientX, e.clientY)) return;
-  // When the chat console or history overlay is open: clicking the pet closes them first,
-  // so neither travels with the window while dragging
-  if (!chatUiEl.classList.contains('hidden') || !chatHistoryEl.classList.contains('hidden')) {
-    closeChat();
-  }
   // The second press of a double-click must not start a drag: double-clicks often drift a few
   // pixels (past the 5px drag threshold), which would micro-drag the window and move the chat
   // box around. Suppress drag-start on that press; clicks still register normally.
@@ -1375,6 +1517,7 @@ function onMouseDown(e: MouseEvent) {
   dragCandidate = true;
   dragMoved = false;
   dragStartScreen = { x: e.screenX, y: e.screenY };
+  lastDragScreenX = e.screenX;
   // Anchor the drag in the MAIN process (window + cursor offset captured together, synchronously)
   window.api.dragBegin();
   canvas.style.cursor = 'grabbing';
@@ -1391,15 +1534,17 @@ function onMouseMove(e: MouseEvent) {
     if (dist > 5) {
       dragging = true;
       dragMoved = true;
-      // DOM overlays live inside the same transparent BrowserWindow as the pet. Hide them all
-      // before moving that window so they never travel across (or beyond) the screen.
-      if (!chatUiEl.classList.contains('hidden') || !chatHistoryEl.classList.contains('hidden')) closeChat();
-      else hideBubble();
+      // The speech bubble lives inside the same transparent window as the pet. Hide it
+      // before moving that window so it never travels across (or beyond) the screen.
+      hideBubble();
       setState('walking');
     }
   }
 
   if (dragging) {
+    const dragDx = e.screenX - lastDragScreenX;
+    if (Math.abs(dragDx) >= 1) facingDir = dragDx < 0 ? -1 : 1;
+    lastDragScreenX = e.screenX;
     // While dragging, the window MUST stay interactive (never click-through): if it went
     // click-through mid-drag, the mouseup would never be delivered, leaving the drag stuck
     // and the window chasing the cursor across the screen (pet + chat box "move by themselves").
@@ -1419,11 +1564,9 @@ function onMouseMove(e: MouseEvent) {
     // teleport the window) and to renderer screenX/display-scaling mismatches.
     window.api.dragMove();
   } else {
-    // Hit state: force interactive while the chat console OR the history overlay is open
-    // (otherwise the window would go click-through and the ✕/scroll would stop working);
-    // otherwise decide per-pixel.
-    const chatOpen = !chatUiEl.classList.contains('hidden') || !chatHistoryEl.classList.contains('hidden');
-    const over = chatOpen || isOverPet(e.clientX, e.clientY);
+    // Decide the hit state purely per-pixel (the chat UI now lives in its own window,
+    // so nothing in this window ever needs to force interactivity).
+    const over = isOverPet(e.clientX, e.clientY);
     if (over !== overPet) {
       overPet = over;
       window.api.setClickThrough(!over);
@@ -1502,7 +1645,7 @@ function handleSingleClick() {
 
 function handleDoubleClick() {
   if (config.aiEnabled) {
-    openChat();
+    window.api.openChat(); // opens the standalone ChatGPT-style chat window
   } else {
     showBubble(window.PetricI18n.t('bubble.aiNotEnabled'), { ms: 3000 });
     window.api.openSettings();
@@ -1544,37 +1687,13 @@ window.addEventListener('keydown', (e) => {
     window.api.openSettings();
     return;
   }
-  // Esc: close the chat console / history overlay first, then quit the app
+  // Esc: quit the pet app
   if (e.key === 'Escape') {
-    if (!chatUiEl.classList.contains('hidden') || !chatHistoryEl.classList.contains('hidden')) {
-      closeChat();
-    } else {
-      window.api.quitApp();
-    }
+    window.api.quitApp();
     return;
   }
   lastActivity = Date.now();
   wake();
-});
-
-chatSendEl.addEventListener('click', sendChat);
-chatInputEl.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    sendChat();
-  }
-});
-
-// Chat history: 🕘 opens the overlay (hiding the console), ✕ closes it back
-chatHistoryBtn.addEventListener('click', () => {
-  renderChatHistory();
-  chatUiEl.classList.add('hidden');
-  chatHistoryEl.classList.remove('hidden');
-});
-chatHistoryClose.addEventListener('click', () => {
-  chatHistoryEl.classList.add('hidden');
-  chatUiEl.classList.remove('hidden');
-  chatInputEl.focus();
 });
 
 // ---------- Applying Config ----------
@@ -1611,25 +1730,58 @@ function applyConfig(cfg: AppConfig) {
 async function applyLocaleTexts() {
   const payload = await window.api.getI18n();
   window.PetricI18n.setLocaleData(payload.locale, payload.dict);
-  chatInputEl.placeholder = window.PetricI18n.t('chat.placeholder');
-  chatSendEl.textContent = window.PetricI18n.t('chat.send');
-  chatHistoryBtn.title = window.PetricI18n.t('chat.historyBtn');
-  const headSpan = chatHistoryEl.querySelector('.chat-history-head span');
-  if (headSpan) headSpan.textContent = window.PetricI18n.t('chat.historyTitle');
   renderAffinityBadge(); // the badge tooltip shows the localized level name
+}
+
+// ---------- Legacy chat data migration ----------
+// Versions before the standalone chat window kept conversations in THIS window's
+// localStorage. Move them into the main-process store exactly once: the store only
+// accepts an import while it is still empty, so chats already in the store are
+// never clobbered, and the local keys are removed once migration ran.
+async function migrateLegacyChats() {
+  try {
+    const rawConv = localStorage.getItem('petric.chat.conversations');
+    const rawHist = localStorage.getItem('petric.chat.history');
+    if (!rawConv && !rawHist) return;
+    let payload: unknown = null;
+    if (rawConv) {
+      try {
+        payload = JSON.parse(rawConv);
+      } catch {
+        payload = null;
+      }
+    }
+    if (!payload && rawHist) {
+      try {
+        payload = JSON.parse(rawHist);
+      } catch {
+        payload = null;
+      }
+    }
+    if (payload) await window.api.chatsImportLegacy(payload);
+    localStorage.removeItem('petric.chat.conversations');
+    localStorage.removeItem('petric.chat.history');
+    localStorage.removeItem('petric.chat.active');
+  } catch {
+    /* Keep the keys so a later launch can retry the migration. */
+  }
 }
 
 // ---------- Startup ----------
 async function initPet() {
+  void migrateLegacyChats(); // move the old localStorage chat data into the main store once
   const cfg = await window.api.getConfig();
   applyConfig(cfg);
   await applyLocaleTexts();
 
   loadSheets();
   window.api.onConfigChanged(applyConfig);
-  window.api.onOpenChatRequest(() => {
-    if (config.aiEnabled) openChat();
-    else window.api.openSettings();
+
+  // Chatting in the chat window warms the pet's heart: affinity + chat stats.
+  // (The AI request itself runs in the main process; this event fires per reply.)
+  window.api.onChatReward(() => {
+    config.statsChats = (config.statsChats || 0) + 1;
+    addAffinity(2);
   });
 
   // Start in click-through state (Windows); mousemove restores interaction once the cursor is over the pet

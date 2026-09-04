@@ -132,7 +132,13 @@ settingsShotWindow.__drawSettingsShot = (locale: Locale, dict: Record<string, I1
   segButtons(
     108,
     192,
-    [T('settings.skinCat'), T('settings.skinDog'), T('settings.skinDango'), T('settings.skinRobot')],
+    [
+      T('settings.skinCat'),
+      T('settings.skinDog'),
+      T('settings.skinDango'),
+      T('settings.skinBulu'),
+      T('settings.skinRobot'),
+    ],
     0,
   );
   rowLabel(T('affinity.title'), 244);

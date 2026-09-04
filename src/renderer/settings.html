@@ -18,6 +18,7 @@
     </header>
 
     <div class="body">
+      <div class="col">
       <!-- UI language + theme -->
       <section>
         <h2 data-i18n="settings.language">界面语言</h2>
@@ -45,6 +46,7 @@
             <button data-skin="cat" data-i18n="settings.skinCat">🐱 猫</button>
             <button data-skin="dog" data-i18n="settings.skinDog">🦊 狐狸</button>
             <button data-skin="default" data-i18n="settings.skinDango">🐰 兔子</button>
+            <button data-skin="bulu" data-i18n="settings.skinBulu">🐈 布噜</button>
             <button data-skin="robot" data-i18n="settings.skinRobot">🤖 机器人</button>
             <button data-skin="custom" data-i18n="settings.skinCustom">🖼️ 自定义</button>
           </div>
@@ -88,6 +90,17 @@
           <input type="range" id="cutout-tol" min="8" max="60" step="1" value="25" />
         </div>
         <p class="hint custom-row" hidden data-i18n-html="settings.cutoutHint"></p>
+        <!-- Photo-pet eye tracking: mark the two eye positions on the (cutout) photo -->
+        <div class="row custom-row" id="mark-eyes-row" hidden>
+          <label data-i18n="settings.markEyes">👀 眼睛跟随</label>
+          <button id="btn-mark-eyes" class="ghost" data-i18n="settings.markEyesBtn">标记眼睛…</button>
+          <button id="btn-clear-eyes" class="ghost" hidden data-i18n="settings.eyesClear">🗑️ 清除标记</button>
+          <span id="eyes-status" class="status"></span>
+        </div>
+        <div class="row custom-row" id="eyes-preview-row" hidden>
+          <label></label>
+          <canvas id="eyes-preview-canvas" class="eyes-preview" width="300" height="260"></canvas>
+        </div>
         <div class="row custom-row" hidden>
           <label></label>
           <button id="btn-clear-custom" class="ghost" data-i18n="settings.clearCustom">🗑️ 清除自定义外观</button>
@@ -110,10 +123,17 @@
           <label class="switch"><input type="checkbox" id="autolaunch" /><span></span></label>
         </div>
         <div class="row">
+          <label data-i18n="settings.autoMove">自主走动</label>
+          <label class="switch"><input type="checkbox" id="auto-move" /><span></span></label>
+        </div>
+        <p class="hint" data-i18n-html="settings.autoMoveHint"></p>
+        <div class="row">
           <button id="btn-reset" class="ghost" data-i18n="settings.resetPos">🎯 重置位置</button>
         </div>
       </section>
+      </div>
 
+      <div class="col">
       <!-- Focus mode: periodic break reminders (default: every 40 minutes) -->
       <section>
         <h2 data-i18n="settings.focusSection">专注模式</h2>
@@ -198,6 +218,7 @@
         </div>
         <p class="hint" data-i18n-html="settings.aiHint"></p>
       </section>
+      </div>
     </div>
   </div>
 

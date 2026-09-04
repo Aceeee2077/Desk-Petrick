@@ -31,18 +31,6 @@ function drawFakeWindow(x: number, y: number, w: number, h: number, title: strin
   }
 }
 
-// ---------- Pet eyes (same frame-coordinate math as app.ts) ----------
-function drawEye(x: number, y: number) {
-  sctx.fillStyle = '#2f2a26';
-  sctx.beginPath();
-  sctx.arc(x, y, 2.6, 0, Math.PI * 2);
-  sctx.fill();
-  sctx.fillStyle = 'rgba(255,255,255,0.9)';
-  sctx.beginPath();
-  sctx.arc(x - 1, y - 1, 0.9, 0, Math.PI * 2);
-  sctx.fill();
-}
-
 // ---------- Text bubble ----------
 function drawBubble(text: string, bx: number, by: number) {
   sctx.font = '13px Nunito, "Noto Sans SC", "Segoe UI", sans-serif';
@@ -97,27 +85,21 @@ shotWindow.__drawPetShot = (locale: Locale, dict: Record<string, I18nValue>) => 
     sctx.fill();
   }
 
-  // Pet (bottom-center): the built-in cat now renders the transparent character art
-  // from sprite-sources (mirrors the app's drawSingleImagePet fitting).
+  // Pet (bottom-center): draw the illustrated cat's first 64px idle frame at 2x.
+  const petX = 400 - 64;
+  const petY = 458 - 128 - 6;
+
   const img = new Image();
-  img.src = '../assets/sprite-sources/cat.png';
+  img.src = '../assets/animated-pets/cat.png';
   img.onload = () => {
     // Shadow under the feet
     sctx.fillStyle = 'rgba(0,0,0,0.28)';
     sctx.beginPath();
     sctx.ellipse(400, 456, 40, 7, 0, 0, Math.PI * 2);
     sctx.fill();
-    // Fit to the same bounds the pet window uses (160x150), bottom-anchored
-    const iw = img.naturalWidth;
-    const ih = img.naturalHeight;
-    const s = Math.min(160 / iw, 150 / ih);
-    const dw = iw * s;
-    const dh = ih * s;
-    const petX = 400 - dw / 2;
-    const petY = 456 - dh;
+    // Idle frame 0 already contains the complete face.
     sctx.imageSmoothingEnabled = false;
-    sctx.drawImage(img, petX, petY, dw, dh);
-    // The character art already contains its face, so no eye overlay is drawn
+    sctx.drawImage(img, 0, 0, 64, 64, petX, petY, 128, 128);
     // Bubble (localized)
     drawBubble(T('bubble.greeting'), 400, petY + 2);
     console.log('SCREENSHOT_READY');

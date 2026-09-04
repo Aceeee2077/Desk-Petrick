@@ -22,33 +22,6 @@
   <!-- Affinity hearts badge (top-right; purely visual, pointer-events: none) -->
   <div id="affinity-badge"></div>
 
-  <!-- AI chat console (triggered by double-clicking the pet / right-click menu) -->
-  <div id="chat-ui" class="hidden">
-    <!-- Latest AI reply renders INSIDE the console so it can never be covered by the input -->
-    <div id="chat-reply" class="hidden"></div>
-    <div class="chat-row">
-      <button id="chat-history-btn" class="chat-icon-btn" title="聊天记录">🕘</button>
-      <input
-        id="chat-input"
-        type="text"
-        maxlength="200"
-        placeholder="和宠物说点什么…"
-        autocomplete="off"
-        spellcheck="false"
-      />
-      <button id="chat-send">发送</button>
-    </div>
-  </div>
-
-  <!-- Chat history overlay (toggled by the 🕘 button) -->
-  <div id="chat-history" class="hidden">
-    <div class="chat-history-head">
-      <span data-i18n="chat.historyTitle">📜 聊天记录</span>
-      <button id="chat-history-close" class="chat-icon-btn">✕</button>
-    </div>
-    <div id="chat-history-list"></div>
-  </div>
-
   <!-- Vendored three.js UMD build (MIT) + GLTFLoader, then app scripts -->
   <script src="../assets/vendor/three.min.js"></script>
   <script src="../assets/vendor/GLTFLoader.js"></script>

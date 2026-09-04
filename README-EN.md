@@ -24,20 +24,22 @@
 | :--- | :--- |
 | 🪟 Transparent always-on-top window | 300×300, frameless, always on top, hidden from taskbar, draggable |
 | 🌐 Chinese/English switch | One-click UI language toggle in Settings (中文 / English); speech lines and bubbles follow |
-| 🐱 Animated pixel pets | Built-in transparent cat / fox / rabbit art plus a robot sprite sheet, all with four procedural states |
+| 🐱 Animated pixel pets | Gray cat / fox / rabbit / Bulu / robot, with real per-frame limb, tail and ear animation across four states |
 | 🧊 3D model skins | Custom appearance supports GLB 3D models (WebGL rendering + raycast hit testing + procedural animation) |
 | ✂️ Local AI cutout | Detects a person, pet, or main object and creates a transparent PNG locally (no upload, toggleable, adjustable strength) |
-| 🎞️ Four animation states | `idle` (breathing + blinking) · `walking` (while dragging) · `sleeping` (after 30s idle) · `click` (jump) |
-| 👀 Eye tracking | The robot skin follows the cursor and blinks randomly every ~2–3.8s |
+| 🐾 Photo pet | Upload your own pet photo → AI cutout → it becomes the desktop pet, with whole-image actions (dance / stretch / tilt…) |
+| 👀 Eye tracking | The robot has procedural eye tracking; mark the two eyes on a photo pet to enable tracking, blinking and sleep closure |
+| 🎞️ Four animation states | `idle` (breathing + blinking + tail wag) · `walking` (alternating limb steps) · `sleeping` · `click` (jump) |
 | 💬 Click dialogue | Single-click plays a jump animation + random speech bubble (customizable) |
-| 🤖 AI chat | Double-click opens a chat input; works with any OpenAI-compatible API (OpenAI / DeepSeek / …); history is stored locally |
+| 🤖 AI chat | Double-click opens a ChatGPT-style chat window with a conversation list (new chat / archive / rename / delete); works with any OpenAI-compatible API (OpenAI / DeepSeek / …); history stays on your machine |
 | ⚙️ Settings panel | Skin / animation speed / opacity / auto-launch / sound / AI config / reset position |
 | 🎵 Click sound | Short synthesized "meow" via Web Audio (toggleable) |
 | ❤️ Affinity | Clicking / dragging / chatting raise your bond through 5 levels (Stranger → Best Friend); hearts shown on a corner badge |
 | ⏰ Focus Mode | On by default: reminds you to "Stand up and stretch, boss!" every 40 minutes (configurable 20–90), with a chime and a jump; text follows the UI language |
-| ☀️🌙 Theme switch | Light (orange-white gradient) / Dark (original purple) — the pet bubble, chat box and settings panel switch together |
+| ☀️🌙 Theme switch | Light (orange-white gradient) / Dark (original purple) — the pet bubble, chat window and settings panel switch together |
 | 🎩 Accessories | Procedural pixel hat / scarf / glasses for the robot skin |
 | 🕺 Idle actions | The pet randomly yawns, stretches, scratches and dances while idle — it feels alive |
+| 🚶 Auto wander | The pet walks / runs / jumps around your desktop on its own (not just when dragged); stays awake instead of sleeping while on (toggleable) |
 | 📊 Interaction stats | Days together, click / chat counts and an affinity growth curve (chart in Settings) |
 | 💬 Proactive chat | After 10 idle minutes the pet says hi on its own (toggleable) |
 | ☁️ Weather | Clicking the pet sometimes reports today's weather (free APIs, fetched by the main process, toggleable) |
@@ -50,10 +52,10 @@
 | :--- | :--- |
 | Left-drag | The pet follows the cursor and plays its walking animation (affinity +1) |
 | Single click | Jump animation + random line + sound (affinity +1; level-ups are announced) |
-| Double click | Opens the AI chat input (or the settings panel if AI is disabled; each chat reply grants affinity +2) |
+| Double click | Opens the ChatGPT-style AI chat window (or the settings panel if AI is disabled; each chat reply grants affinity +2) |
 | Right-click / tray icon | Settings / AI chat / reset position / quit |
 | `Ctrl + Shift + P` | Open the settings panel |
-| `Esc` | Close the chat input first, then quit the app |
+| `Esc` | In the chat window: close it; on the pet window: quit the app |
 | No mouse/keyboard for 30s | The pet falls asleep (floating Zzz); any input wakes it |
 
 ---
@@ -100,7 +102,7 @@ A pixel kitten will appear at the center of your screen. Try dragging it, clicki
 | `npm run dev` | Build and launch the dev version |
 | `npm run build` | Generate sprites + compile TypeScript + copy static assets to `dist/` |
 | `npm run sprites` | Regenerate the pixel sprites and icons only (`scripts/generate-sprites.mjs`) |
-| `npm run smoke` | Build and run the smoke test (checks pet window + settings panel with deep diagnostics; exit code 0 = pass) |
+| `npm run smoke` | Build and run the smoke test (checks pet window + settings panel + chat window with deep diagnostics; exit code 0 = pass) |
 | `npm run dist` | Package the current platform (Windows: NSIS / macOS: DMG / Linux: AppImage + deb) |
 | `npm run dist:win` / `dist:mac` / `dist:linux` | Package a specific platform |
 
@@ -136,16 +138,18 @@ Artifacts are written to the `release/` directory.
 | Setting | Description |
 | :--- | :--- |
 | Language | 中文 / English one-click toggle (persisted; tray, context menu and speech lines switch too) |
-| Theme | Light (orange-white gradient) / Dark (original purple) — the pet window and settings panel switch together |
-| Pet type | Cat 🐱 / Fox 🦊 / Rabbit 🐰 / Robot 🤖 — switches instantly |
-| Accessory | None / Hat 🎩 / Scarf 🧣 / Glasses 👓 — procedural pixel art shown for the robot skin |
+| Theme | Light (orange-white gradient) / Dark (original purple) — the pet window, chat window and settings panel switch together |
+| Pet type | Gray cat 🐱 / Fox 🦊 / Rabbit 🐰 / Bulu 🐈 / Robot 🤖 — switches instantly |
+| Accessory | None / Hat 🎩 / Scarf 🧣 / Glasses 👓 — procedural pixel art for the robot skin |
 | Auto cutout | Local U-2-Netp subject segmentation for complex photo backgrounds; strength slider 8–60; applies to "Single image" and "2.5D standee" modes |
+| Eye tracking | In "Single image" mode, mark the two eyes on your photo — pupils follow the cursor and blink |
 | Affinity | Current affinity value and level (clicking / dragging / chatting raise it; persisted) |
 | Interaction stats | Days together, first day, click / chat counts and the affinity growth curve |
 | Animation speed | 0.5x ~ 2x slider, applies to all animation frame rates |
 | Opacity | 0.5 ~ 1.0 slider (whole-window opacity) |
 | Click sound | Web Audio synthesized sound, toggleable |
 | Auto-launch | Based on the native `app.setLoginItemSettings` API |
+| Auto wander | The pet walks / runs / jumps around the desktop by itself; while on it stays awake (no 30 s auto-sleep), off restores the original sleep behavior |
 | Reset position | Back to the center of the primary display |
 | Focus Mode | Break-reminder toggle + interval (20 / 30 / 40 / 60 / 90 minutes) |
 | Life Assistant | Independent toggles: proactive chat / weather / hourly chime |
@@ -153,7 +157,15 @@ Artifacts are written to the `release/` directory.
 
 ### 🤖 Configuring AI Chat
 
-Any **OpenAI-compatible** `/chat/completions` endpoint works:
+> ⚠️ **BYOK (Bring Your Own Key)**: this repository ships **no API key of its own** — the
+> default config only holds placeholders (the sample Base URL is `https://api.openai.com/v1`)
+> and AI chat is off by default. Every user — you, or anyone who clones / downloads this repo —
+> must **sign up with an AI provider themselves** and enter **their own** Base URL + API Key +
+> model name. Requests are sent only to the endpoint you configure and nowhere else.
+
+Double-click the pet (or tray / right-click menu → "💬 AI Chat") to open the chat window; first
+finish the setup under Settings → "AI Chat". Any **OpenAI-compatible** `/chat/completions`
+endpoint works:
 
 | Provider | API Base URL | Example model |
 | :--- | :--- | :--- |
@@ -164,10 +176,15 @@ Any **OpenAI-compatible** `/chat/completions` endpoint works:
 
 Fill in the values, hit "🧪 Test Chat" to verify, then double-click the pet to chat.
 
-> 🔒 **Privacy**: API key and chat history are stored **locally only**
-> - Config: `userData/config.json`
-> - Chat history: renderer `localStorage`
-> Nothing is uploaded anywhere except to the AI provider you configured. AI is off by default and costs nothing.
+The chat window supports multiple conversations: from the left-hand list you can **start a new
+chat, archive (📁 Archived section), rename or delete** conversations; both the pet window and
+the chat window share the same history in real time.
+
+> 🔒 **Privacy & data location**: the API key and chat history stay on your machine
+> - AI config: `userData/config.json`
+> - Chat history: `userData/chat-store.json` (persisted by the main process, shared by the pet window and the chat window)
+> Nothing is uploaded anywhere except to the AI provider you configured. AI is off by default and
+> costs nothing until you add a key.
 
 ---
 
@@ -213,15 +230,15 @@ node scripts/set-custom.mjs --clear
 
 ### 1. Replacing / Adding Sprite Sheets
 
-The transparent cat, fox and rabbit art lives in `src/assets/sprite-sources/` and receives
-procedural breathing, walking, sleeping and click motion. The robot sheet is generated by
-`scripts/generate-sprites.mjs`.
+The gray cat, fox, rabbit and Bulu sheets live in `src/assets/animated-pets/`. Each is a
+256×256, 4×4 sheet with 64×64 frames. The robot lives in `src/assets/sprites/` and is
+generated by `scripts/generate-sprites.mjs`.
 
 **Option A: swap in your own sheet (recommended)**
 Replace the file with the same name — no code changes needed:
 
 ```
-src/assets/sprite-sources/cat.png     ← single character image with a transparent background
+src/assets/animated-pets/cat.png     ← 256×256, 4 rows × 4 columns (idle/walking/sleeping/click, 64×64 frames)
 ```
 
 **Option B: extend the generator for a new pet**
@@ -231,7 +248,8 @@ In `scripts/generate-sprites.mjs`:
 3. Register the skin in the renderer: `loadSheets()` in `src/renderer/app.ts` and the `#skin-seg` buttons in `src/renderer/settings.ts`;
 4. Run `npm run sprites`.
 
-Eyes, blinks and Zzz are overlaid by the renderer (that's how "eye tracking" works), so the sprite sheets themselves contain no eyes.
+The illustrated animal sheets contain their complete faces. Robot eyes/blinks and the Zzz
+particles are overlaid by the renderer.
 
 ### 2. Changing the Speech Lines
 
@@ -257,14 +275,16 @@ lines: ['Meow~', "Don't touch me!", 'I\'m hungry…'],       // enDict
 petric/
 ├── src/
 │   ├── main/
-│   │   ├── main.ts            # Main process: window/tray/IPC/AI requests/auto-launch
+│   │   ├── main.ts            # Main process: window/tray/IPC/AI requests/chat orchestration/auto-launch
+│   │   ├── chat-store.ts      # Conversation store: local persistence (userData/chat-store.json)
 │   │   └── preload.ts         # contextBridge exposes window.api
 │   ├── renderer/
 │   │   ├── index.html         # Pet window page
-│   │   ├── styles.css         # Pet window styles (transparent bg/bubbles/chat box)
+│   │   ├── styles.css         # Pet window styles (transparent bg / bubbles / affinity badge)
 │   │   ├── i18n.ts            # Renderer i18n (window.PetricI18n, dictionary from the main process)
-│   │   ├── app.ts             # Canvas drawing, animation state machine, drag, interactions, chat
+│   │   ├── app.ts             # Canvas drawing, animation state machine, drag, interactions & chat rewards
 │   │   ├── pet3d.ts           # 3D model rendering (three.js UMD + GLTFLoader, raycast hit testing)
+│   │   ├── chat.html / chat.css / chat.ts   # ChatGPT-style chat window (conversation list / messages / archive)
 │   │   ├── settings.html      # Settings panel page
 │   │   ├── settings.css       # Glassmorphism settings panel styles
 │   │   └── settings.ts        # Settings panel logic
@@ -273,13 +293,15 @@ petric/
 │   │   ├── config.ts          # Config read/write (userData/config.json)
 │   │   └── i18n.ts            # Chinese/English UI string dictionaries (single source)
 │   └── assets/
-│       ├── sprite-sources/    # Built-in transparent cat / fox / rabbit art
-│       ├── sprites/           # Generated robot sheet and compatibility assets
+│       ├── sprite-sources/    # Original cat / fox / rabbit reference art
+│       ├── animated-pets/     # 64px four-state sheets for gray cat / fox / rabbit / Bulu
+│       ├── sprites/           # Procedural robot and compatibility sheets
 │       ├── models/            # Test 3D model test-pet.glb
 │       ├── vendor/            # Vendored three.js UMD build (MIT)
 │       ├── icon.png / icon.ico / icon.icns / tray.png
 ├── scripts/
 │   ├── generate-sprites.mjs   # Pixel sprite & icon generator (zero-dependency PNG encoder)
+│   ├── prepare-animated-pet.mjs # Cleans, slices and normalizes 4×4 animation art
 │   ├── copy-vendor.mjs        # Copies the three.js UMD build from node_modules into vendor/
 │   ├── make-test-model.mjs    # Generates the test 3D model (GLB)
 │   ├── copy-assets.mjs        # Copies html/css/assets into dist/ on build
@@ -299,6 +321,9 @@ petric/
 - Renderer ↔ main communicate only through `window.api` (IPC), with
   `contextIsolation: true` + `sandbox: true`.
 - AI network requests are made in the **main process** to avoid browser CORS restrictions.
+- Chat data is managed centrally in the **main process** (`chat-store.ts`, persisted to
+  `userData/chat-store.json`); the pet window and the chat window stay in sync through
+  `chats-changed` broadcasts.
 - Dragging uses screen-coordinate absolute positioning (`screenX/Y` + window position) — no cumulative drift.
 - Transparent window + `backgroundThrottling: false` keeps `requestAnimationFrame` running reliably.
 - The 3D mode uses a vendored **three.js UMD (MIT)** build — no bundler needed; hit testing uses
@@ -319,7 +344,7 @@ petric/
   needed to re-initialize the WebGL context.
 - **macOS transparent window**: the Dock icon is hidden; add vibrancy in `main.ts` if you want a frosted-glass effect.
 - **Unsigned packages**: Windows SmartScreen / macOS Gatekeeper will warn about the unknown developer.
-- **Built-in appearances**: cat / fox / rabbit / robot; add more via the Customization Guide.
+- **Built-in appearances**: gray cat / fox / rabbit / Bulu / robot; add more via the Customization Guide.
 
 ---
 
@@ -358,7 +383,7 @@ See [CONTRIBUTING.md](./.github/CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](./.git
 
 [MIT](./LICENSE) © Petric Contributors
 
-- The bundled cat / fox / rabbit art is distributed with this repository; the robot sprite is procedurally generated by the project.
+- The gray cat / fox / rabbit / Bulu animations were generated from project-provided references and ship with this repository; the robot is procedurally generated by the project.
 - 3D rendering uses [three.js](https://threejs.org/) (MIT, vendored into `src/assets/vendor/`).
 - If you replace them with third-party art or models, verify their license yourself
   (CC0 / MIT / OGA-BY 3.0 recommended, and credit the source in the README).

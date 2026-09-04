@@ -8,7 +8,7 @@
 // ============================================================================
 
 /** Pet skin (legacy IDs dog/default now display the built-in fox/rabbit art). */
-type PetSkin = 'cat' | 'dog' | 'default' | 'robot' | 'custom';
+type PetSkin = 'cat' | 'dog' | 'default' | 'bulu' | 'robot' | 'custom';
 
 /** UI language */
 type Locale = 'zh' | 'en';
@@ -79,6 +79,32 @@ type ChatRole = 'system' | 'user' | 'assistant';
 interface ChatMessage {
   role: ChatRole;
   content: string;
+}
+
+/** One independent AI chat conversation (the pet can hold many) */
+interface ChatConversation {
+  id: string;
+  /** Auto-title derived from the first user message (may be empty = "new chat") */
+  title: string;
+  messages: ChatMessage[];
+  createdAt: number;
+  updatedAt: number;
+  /** True while the conversation is archived (hidden from the main list). */
+  archived?: boolean;
+}
+
+/** Full chat-store snapshot shared between the chat window and the pet window. */
+interface ChatState {
+  conversations: ChatConversation[];
+  /** Id of the conversation new messages go to ('' when there is none yet). */
+  activeId: string;
+}
+
+/** Result of sending one chat message (user + assistant round-trip orchestrated in main). */
+interface ChatSendResult {
+  ok: boolean;
+  /** Localized failure reason (only when ok is false). */
+  error?: string;
 }
 
 /** Custom image query / selection result */
@@ -152,6 +178,12 @@ interface AppConfig {
   weatherEnabled: boolean;
   /** Hourly chime: the pet jumps and announces the hour */
   hourlyChime: boolean;
+  /** Marked eye positions (normalized 0..1 within the custom photo) for the photo-pet
+   *  eye-following overlay. null = not calibrated. */
+  photoEyes: { x1: number; y1: number; x2: number; y2: number } | null;
+  /** Autonomous movement: the pet walks / runs / jumps around the desktop on its own
+   *  (stays awake instead of auto-sleeping while enabled) */
+  autoMove: boolean;
 }
 
 /** Weather reported by the main process (free APIs: ipwho.is for location + Open-Meteo) */
@@ -205,8 +237,30 @@ interface PetApi {
   autoLaunchSet(enabled: boolean): Promise<boolean>;
   /** Subscribe to config changes, returns an unsubscribe function */
   onConfigChanged(cb: (cfg: AppConfig) => void): () => void;
-  /** Subscribe to "open chat input" requests (from tray / context menu) */
-  onOpenChatRequest(cb: () => void): () => void;
+  /** Open (or focus) the standalone ChatGPT-style chat window */
+  openChat(): void;
+  /** Close the chat window (frameless windows close themselves via this IPC) */
+  closeChatWindow(): void;
+  /** Read the whole chat store (conversations + active id) */
+  chatsGetState(): Promise<ChatState>;
+  /** Create a fresh conversation and make it active */
+  chatsCreate(): Promise<ChatConversation>;
+  /** Delete a conversation (the active one is re-selected automatically) */
+  chatsDelete(id: string): Promise<void>;
+  /** Toggle a conversation's archived flag */
+  chatsArchive(id: string): Promise<void>;
+  /** Rename a conversation */
+  chatsRename(id: string, title: string): Promise<void>;
+  /** Remember which conversation is active (used when the chat window reopens) */
+  setActiveChat(id: string): void;
+  /** Send one message in a conversation; the AI reply is appended by the main process */
+  chatsSend(id: string, text: string): Promise<ChatSendResult>;
+  /** Import the old localStorage conversations/history once (no-op when the store already has data) */
+  chatsImportLegacy(payload: unknown): Promise<boolean>;
+  /** Subscribe to chat-store changes, returns an unsubscribe function */
+  onChatsChanged(cb: (state: ChatState) => void): () => void;
+  /** Subscribe to "an AI reply just completed" (pet adds affinity / stats via this) */
+  onChatReward(cb: () => void): () => void;
   /** Read the currently active custom image (userData takes priority, then the project's src/assets/sprites/custom.*) */
   getCustomImage(): Promise<CustomImageResult>;
   /** Open a file picker, copy the selected image into the app data directory and return it */
@@ -217,6 +271,14 @@ interface PetApi {
   getI18n(): Promise<I18nPayload>;
   /** Get today's weather (main process fetches from free APIs to avoid CORS; cached ~30 min) */
   getWeather(): Promise<WeatherResult>;
+  /** Start gliding the pet window horizontally (dir: -1 left / +1 right; speed: px per second) */
+  autoMoveStart(dir: number, speed: number): void;
+  /** Stop the autonomous window glide */
+  autoMoveStop(): void;
+  /** Hop the pet window vertically (a parabolic jump of `height` px over `duration` ms) */
+  autoJump(height: number, duration: number): void;
+  /** Center the pet window on the display it currently sits on */
+  centerHere(): void;
 }
 
 interface Window {
