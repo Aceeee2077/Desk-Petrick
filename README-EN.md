@@ -16,6 +16,12 @@
 ![pet cat preview](./docs/screenshots/pet-cat-en.png)
 ![settings panel](./docs/screenshots/settings-panel-en.png)
 
+## 📥 Download
+
+End users should download the latest `Petric Setup x.y.z.exe` installer from
+[GitHub Releases](https://github.com/Aceeee2077/Desk-Petrick/releases/latest).
+`win-unpacked/Petric.exe` depends on the files beside it and must not be distributed alone.
+
 ---
 
 ## ✨ Features
@@ -145,7 +151,7 @@ dialog appears — one click quits, installs and relaunches the new version. The
   generates, to the GitHub Release of that tag:
   - Windows: `Petric Setup x.y.z.exe` + `latest.yml` + `.blockmap`
   - Linux: `Petric-x.y.z.AppImage` + `latest-linux.yml`
-  - Tags should match the version (e.g. `v0.3.0`).
+  - The tag must match the package version (`0.3.1` currently maps to `v0.3.1`).
 - Local builds are never uploaded automatically: run `npm run dist:win` and attach the
   `release/` artifacts to the Release manually.
 - Auto-update only applies to **installed packaged builds**; `npm run dev` never triggers it.
@@ -371,7 +377,7 @@ petric/
 
 ```bash
 # Auto-generate the README header images (docs/screenshots/)
-npm run build && electron . --screenshot
+npm run build && node scripts/run-electron.mjs . --screenshot
 ```
 
 - `docs/screenshots/pet-cat.png`: the pet on a (simulated) desktop — composited from the real sprite sheet

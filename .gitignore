@@ -1,12 +1,43 @@
+# Dependencies and generated application files
 node_modules/
 dist/
+
+# electron-builder output. Release binaries belong in GitHub Releases, not Git.
 release/
+*.exe
+*.msi
+*.dmg
+*.AppImage
+*.deb
+*.blockmap
+latest*.yml
+builder-debug.yml
+builder-effective-config.yaml
+
+# Package-manager / Electron caches and test output
 .npm-cache/
 .electron-cache/
 .electron-builder-cache/
+coverage/
 *.log
+*.tmp
+
+# Local secrets and signing certificates
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.key
+
+# Local Petric data and private release notes
+.petric-data/
+userData/
+release.md
+
+# OS and editor files
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-release.md

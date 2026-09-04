@@ -16,6 +16,11 @@
 ![pet cat preview](./docs/screenshots/pet-cat.png)
 ![settings panel](./docs/screenshots/settings-panel.png)
 
+## 📥 下载
+
+普通用户请前往 [GitHub Releases](https://github.com/Aceeee2077/Desk-Petrick/releases/latest)
+下载最新的 `Petric Setup x.y.z.exe` 安装包；`win-unpacked/Petric.exe` 依赖同目录文件，不能单独分发。
+
 
 ---
 
@@ -142,7 +147,7 @@ npm run dist:win      # 在 Windows 上打包 Windows 版
   GitHub Release：
   - Windows：`Petric Setup x.y.z.exe` + `latest.yml` + `.blockmap`
   - Linux：`Petric-x.y.z.AppImage` + `latest-linux.yml`
-  - tag 建议与版本号一致（如 `v0.3.0`）。
+  - tag 必须与版本号一致（当前版本 `0.3.1` 对应 `v0.3.1`）。
 - 本地构建不会自动上传：`npm run dist:win` 后把 `release/` 产物手动挂到 Release 即可。
 - 自动更新只在**已安装的打包版**里生效；`npm run dev` 开发模式不触发。
 
@@ -347,7 +352,7 @@ petric/
 
 ```bash
 # 自动生成 README 顶部配图（docs/screenshots/）
-npm run build && electron . --screenshot
+npm run build && node scripts/run-electron.mjs . --screenshot
 ```
 
 - `docs/screenshots/pet-cat.png`：宠物在（模拟）桌面上的效果（真实精灵图合成）
