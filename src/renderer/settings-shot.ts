@@ -12,6 +12,8 @@ const sc = settingsShotCanvas.getContext('2d')!;
 const W = 880;
 const H = 680;
 const COL_RIGHT = 478; // right column content x offset
+const ROW_LABEL_WIDTH = 108;
+const LEFT_LONG_CONTROL_X = 150;
 
 function rrect(x: number, y: number, w: number, h: number, r: number) {
   sc.beginPath();
@@ -24,6 +26,18 @@ function text(txt: string, x: number, y: number, size: number, color: string, we
   sc.textAlign = align;
   sc.textBaseline = 'middle';
   sc.fillText(txt, x, y);
+}
+
+function textWithin(txt: string, x: number, y: number, maxWidth: number, size: number, color: string, weight = 400) {
+  sc.font = `${weight} ${size}px Nunito, "Noto Sans SC", "Segoe UI", sans-serif`;
+  if (sc.measureText(txt).width <= maxWidth) {
+    text(txt, x, y, size, color, weight);
+    return;
+  }
+
+  const chars = Array.from(txt);
+  while (chars.length && sc.measureText(`${chars.join('')}…`).width > maxWidth) chars.pop();
+  text(`${chars.join('')}…`, x, y, size, color, weight);
 }
 
 function rowLabel(txt: string, y: number, x = 18) {
@@ -151,9 +165,9 @@ settingsShotWindow.__drawSettingsShot = (locale: Locale, dict: Record<string, I1
     1,
   );
   rowLabel(T('settings.animSpeed') + ' 1.0x', 322);
-  slider(108, 321, 240, 0.6);
+  slider(LEFT_LONG_CONTROL_X, 321, 198, 0.6);
   rowLabel(T('settings.opacity') + ' 100%', 358);
-  slider(108, 357, 240, 1);
+  slider(LEFT_LONG_CONTROL_X, 357, 198, 1);
   rowLabel(T('settings.sound'), 394);
   switch_(392, 383, true);
   rowLabel(T('settings.autolaunch'), 430);
@@ -164,8 +178,8 @@ settingsShotWindow.__drawSettingsShot = (locale: Locale, dict: Record<string, I1
   rowLabel(T('settings.focusMode'), 528);
   switch_(392, 517, true);
   rowLabel(T('settings.focusInterval'), 564);
-  segButtons(108, 552, ['20', '30', '40', '60', '90'], 2);
-  text(T('settings.focusHint').split(/[。.]/)[0], 18, 606, 11, '#a1623a');
+  segButtons(LEFT_LONG_CONTROL_X, 552, ['20', '30', '40', '60', '90'], 2);
+  textWithin(T('settings.focusHint').split(/[。.]/)[0], 18, 606, COL_RIGHT - 36, 11, '#a1623a');
 
   // ---------- Right column: stats, AI chat ----------
   const RX = COL_RIGHT; // content start
@@ -228,14 +242,14 @@ settingsShotWindow.__drawSettingsShot = (locale: Locale, dict: Record<string, I1
   rowLabel(T('settings.aiEnabled'), 424, RX);
   switch_(RX + 344, 413, true);
   rowLabel(T('settings.apiBase'), 460, RX);
-  inputBox(RX, 449, 384, 'https://api.deepseek.com');
+  inputBox(RX + ROW_LABEL_WIDTH, 449, W - RX - ROW_LABEL_WIDTH - 18, 'https://api.deepseek.com');
   rowLabel(T('settings.apiKey'), 496, RX);
-  inputBox(RX, 485, 384, '••••••••••••••••••');
+  inputBox(RX + ROW_LABEL_WIDTH, 485, W - RX - ROW_LABEL_WIDTH - 18, '••••••••••••••••••');
   rowLabel(T('settings.model'), 532, RX);
-  inputBox(RX, 521, 384, 'deepseek-chat');
+  inputBox(RX + ROW_LABEL_WIDTH, 521, W - RX - ROW_LABEL_WIDTH - 18, 'deepseek-chat');
   ghostButton(RX, 556, 110, T('settings.testAi'));
   text(T('settings.apiOk'), RX + 116, 571, 11.5, '#15803d');
-  text(T('settings.aiHint').split(/[。.]/)[0], RX, 614, 11, '#a1623a');
+  textWithin(T('settings.aiHint').split(/[。.]/)[0], RX, 614, W - RX - 18, 11, '#a1623a');
 
   console.log('SETTINGS_SHOT_READY');
 };
