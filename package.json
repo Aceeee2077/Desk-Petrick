@@ -1,17 +1,17 @@
 {
-  "name": "petric",
-  "version": "0.3.1",
-  "description": "Petric · 跨平台透明桌面宠物 / Cross-platform desktop pet (Electron + TypeScript + HTML5 Canvas)",
+  "name": "prismoo",
+  "version": "0.4.0",
+  "description": "Prismoo · 跨平台透明桌面宠物 / Cross-platform desktop pet (Electron + TypeScript + HTML5 Canvas)",
   "main": "dist/main/main.js",
-  "author": "Petric Contributors",
+  "author": "Prismoo Contributors",
   "license": "MIT",
   "private": true,
   "scripts": {
     "sprites": "node scripts/generate-sprites.mjs",
-    "badges": "node scripts/make-badge.mjs",
+    "brand-icons": "node scripts/generate-brand-icons.mjs",
     "vendor": "node scripts/copy-vendor.mjs",
     "models": "node scripts/make-test-model.mjs",
-    "build": "npm run sprites && npm run vendor && npm run models && tsc && node scripts/copy-assets.mjs",
+    "build": "npm run sprites && npm run brand-icons && npm run vendor && npm run models && tsc && node scripts/copy-assets.mjs",
     "dev": "npm run build && node scripts/run-electron.mjs .",
     "start": "node scripts/run-electron.mjs .",
     "smoke": "npm run build && node scripts/run-electron.mjs . --smoke",
@@ -21,7 +21,9 @@
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
     "dist:mac": "npm run build && electron-builder --mac",
-    "dist:linux": "npm run build && electron-builder --linux"
+    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:release": "npm run build && electron-builder --publish always",
+    "release": "node scripts/release.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

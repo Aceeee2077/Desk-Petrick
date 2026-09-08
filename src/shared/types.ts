@@ -16,6 +16,51 @@ type Locale = 'zh' | 'en';
 /** UI theme: light = orange-white gradient, dark = the original purple tone */
 type Theme = 'light' | 'dark';
 
+/** Software update release channel */
+type UpdateChannel = 'stable' | 'prerelease';
+
+/** Live software-update state (kept in the main process, mirrored to settings UI) */
+type UpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'up-to-date'
+  | 'error'
+  | 'dev';
+
+/** One download-progress snapshot (electron-updater ProgressInfo) */
+interface UpdateProgressInfo {
+  /** 0..100 */
+  percent: number;
+  /** Bytes transferred in this download session */
+  transferred: number;
+  /** Total bytes to download */
+  total: number;
+  /** Current download speed in bytes/second */
+  bytesPerSecond: number;
+}
+
+/** Snapshot shared between the main process and settings / tray / pet UI */
+interface UpdateState {
+  status: UpdateStatus;
+  /** Current running version (without a leading v) */
+  currentVersion: string;
+  /** New version being offered / downloaded (without a leading v) */
+  version?: string;
+  progress?: UpdateProgressInfo;
+  /** GitHub release notes for the offered version, when fetchable */
+  notes?: string;
+  /** Localized error message (status === 'error') */
+  error?: string;
+  /** Manual GitHub release page (macOS unsigned / dev fallback) */
+  manualUrl?: string;
+  autoCheck: boolean;
+  autoDownload: boolean;
+  channel: UpdateChannel;
+}
+
 /** Procedural pixel accessory worn by the generated robot sprite. */
 type Accessory = 'none' | 'hat' | 'scarf' | 'glasses';
 
@@ -56,10 +101,10 @@ interface PetricI18n {
 /** 3D pet renderer handle exposed by pet3d.js (window.Petric3D), used when customImageMode is 'model' or 'billboard' */
 interface Petric3DHandle {
   init(canvas: HTMLCanvasElement): boolean;
-  /** Load a GLB model from a data URL. Resolves true on success. */
-  loadModel(dataUrl: string): Promise<boolean>;
+  /** Load a GLB model from a pet-custom:// or data URL. Resolves true on success. */
+  loadModel(resourceUrl: string): Promise<boolean>;
   /** Load a single 2D image as a billboard plane (2.5D). Resolves true on success. */
-  loadBillboard(dataUrl: string): Promise<boolean>;
+  loadBillboard(resourceUrl: string): Promise<boolean>;
   /** Feed pointer state each frame: cursor x (window coords), dragging flag, drag x-velocity. */
   setPointer(pointerX: number, dragging: boolean, dragVelX: number): void;
   /** Advance the procedural animation (dt in seconds). */
@@ -110,8 +155,8 @@ interface ChatSendResult {
 /** Custom image query / selection result */
 interface CustomImageResult {
   ok: boolean;
-  /** base64 data URL, can be assigned directly to img.src */
-  dataUrl?: string;
+  /** pet-custom:// resource URL, can be assigned directly to img.src / GLTFLoader */
+  url?: string;
   /** Currently configured display mode */
   mode?: CustomImageMode;
   /** Absolute path of the image on disk */
@@ -184,6 +229,20 @@ interface AppConfig {
   /** Autonomous movement: the pet walks / runs / jumps around the desktop on its own
    *  (stays awake instead of auto-sleeping while enabled) */
   autoMove: boolean;
+  /** Update: check for new GitHub Releases shortly after startup (packaged builds) */
+  updateAutoCheck: boolean;
+  /** Update: download a found release automatically in the background */
+  updateAutoDownload: boolean;
+  /** Update: stable releases only, or include pre-releases */
+  updateChannel: UpdateChannel;
+  /** Update: version the user asked to install later / that finished installing */
+  updateDeferredVersion: string;
+  /** Update: timestamp when the user chose "later" (ms epoch; 0 = none) */
+  updateDeferredAt: number;
+  /** Update: next automatic check due time (ms epoch; 0 = due now) */
+  updateNextAutoCheckAt: number;
+  /** Update: consecutive automatic-check failures (drives the backoff schedule) */
+  updateAutoRetry: number;
 }
 
 /** Weather reported by the main process (free APIs: ipwho.is for location + Open-Meteo) */
@@ -235,6 +294,16 @@ interface PetApi {
   autoLaunchGet(): Promise<boolean>;
   /** Set auto-launch, returns the final status */
   autoLaunchSet(enabled: boolean): Promise<boolean>;
+  /** Read the current update state (also refreshes persisted preferences) */
+  updateGetState(): Promise<UpdateState>;
+  /** Manually check for updates from the settings panel (no native dialogs) */
+  updateCheck(): Promise<UpdateState>;
+  /** Start / resume the background download of an available update */
+  updateDownload(): Promise<UpdateState>;
+  /** Restart the app and install an already-downloaded update */
+  updateInstall(): Promise<void>;
+  /** Open the GitHub Releases page in the default browser */
+  updateOpenPage(): Promise<void>;
   /** Subscribe to config changes, returns an unsubscribe function */
   onConfigChanged(cb: (cfg: AppConfig) => void): () => void;
   /** Open (or focus) the standalone ChatGPT-style chat window */
@@ -263,6 +332,8 @@ interface PetApi {
   onChatReward(cb: () => void): () => void;
   /** Subscribe to main-process notices shown as a pet speech bubble (e.g. "new update") */
   onPetNotice(cb: (text: string) => void): () => void;
+  /** Subscribe to update-state changes (settings progress bar / status / buttons) */
+  onUpdateState(cb: (state: UpdateState) => void): () => void;
   /** Read the currently active custom image (userData takes priority, then the project's src/assets/sprites/custom.*) */
   getCustomImage(): Promise<CustomImageResult>;
   /** Open a file picker, copy the selected image into the app data directory and return it */

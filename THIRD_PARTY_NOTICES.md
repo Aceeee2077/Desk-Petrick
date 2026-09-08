@@ -1,6 +1,6 @@
 # Third-party notices
 
-Petric's optional automatic background removal uses these components:
+Prismoo's optional automatic background removal uses these components:
 
 - **U-2-Netp ONNX model** — Apache License 2.0. Model distribution:
   <https://huggingface.co/BritishWerewolf/U-2-Netp>. Original U-2-Net project:

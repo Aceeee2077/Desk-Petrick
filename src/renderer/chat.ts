@@ -51,6 +51,13 @@ let chatCfg: AppConfig = {
   hourlyChime: true,
   photoEyes: null,
   autoMove: true,
+  updateAutoCheck: true,
+  updateAutoDownload: true,
+  updateChannel: 'stable',
+  updateDeferredVersion: '',
+  updateDeferredAt: 0,
+  updateNextAutoCheckAt: 0,
+  updateAutoRetry: 0,
 };
 
 let conversations: ChatConversation[] = [];

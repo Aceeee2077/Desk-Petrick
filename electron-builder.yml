@@ -1,5 +1,7 @@
+# appId is kept stable from the Petric era so installers recognize an existing
+# install and upgrade it in place during the rebrand (visible name is Prismoo).
 appId: com.petric.desktop-pet
-productName: Petric
+productName: Prismoo
 directories:
   output: release
   buildResources: build
@@ -33,6 +35,9 @@ win:
     - "!**/*.ts"
     - "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**/*"
     - "!node_modules/onnxruntime-node/bin/napi-v6/linux/**/*"
+  # Keep the installer file name identical to the one electron-updater writes into
+  # latest.yml (no spaces / localized names), otherwise auto-update downloads 404.
+  artifactName: Prismoo-Setup-${version}.${ext}
   target:
     - nsis
   icon: src/assets/icon.ico
@@ -40,7 +45,7 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
-  shortcutName: Petric
+  shortcutName: Prismoo
 
 mac:
   files:
@@ -72,4 +77,4 @@ linux:
     - deb
   icon: src/assets/icon.png
   category: Utility
-  maintainer: Petric Contributors
+  maintainer: Prismoo Contributors

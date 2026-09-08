@@ -4,16 +4,19 @@
   <meta charset="UTF-8" />
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: pet-custom:; script-src 'self'; connect-src 'self' pet-custom:"
   />
-  <title data-i18n="settings.windowTitle">Petric 设置</title>
+  <title data-i18n="settings.windowTitle">Prismoo 设置</title>
   <link rel="stylesheet" href="./settings.css" />
 </head>
 <body>
   <div class="panel">
     <!-- Drag region (-webkit-app-region: drag) -->
     <header class="drag">
-      <div class="title" data-i18n="settings.title">🐾 Petric 设置</div>
+      <div class="head-left">
+        <div class="title" data-i18n="settings.title">🐾 Prismoo 设置</div>
+        <span id="app-version" class="header-version"></span>
+      </div>
       <button id="btn-close" class="no-drag" title="关闭" data-i18n-title="settings.close">✕</button>
     </header>
 
@@ -217,6 +220,49 @@
           <span id="ai-status" class="status"></span>
         </div>
         <p class="hint" data-i18n-html="settings.aiHint"></p>
+      </section>
+
+      <!-- Software updates: startup check policy, channels, live progress, release notes -->
+      <section>
+        <h2 data-i18n="settings.updateSection">🔄 更新</h2>
+        <div class="row">
+          <label data-i18n="settings.updateAutoCheck">启动时检查更新</label>
+          <label class="switch"><input type="checkbox" id="update-auto-check" /><span></span></label>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.updateAutoDownload">自动下载新版本</label>
+          <label class="switch"><input type="checkbox" id="update-auto-download" /><span></span></label>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.updateChannel">更新渠道</label>
+          <div class="seg" id="update-channel-seg">
+            <button data-channel="stable" class="active" data-i18n="settings.updateChannelStable">稳定版</button>
+            <button data-channel="prerelease" data-i18n="settings.updateChannelPrerelease">预览版</button>
+          </div>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.updateVersion">当前版本</label>
+          <span id="update-version" class="val">—</span>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.updateStatus">状态</label>
+          <span id="update-status" class="status"></span>
+        </div>
+        <div class="row" id="update-progress-row" hidden>
+          <label data-i18n="settings.updateProgress">下载进度</label>
+          <div class="progress"><div id="update-progress-bar" class="progress-fill"></div></div>
+          <span id="update-progress-text" class="val">0%</span>
+        </div>
+        <div class="row update-actions">
+          <button id="btn-check-update" class="ghost" data-i18n="settings.checkUpdate">🔍 立即检查更新</button>
+          <button id="btn-download-update" class="ghost" hidden data-i18n="settings.downloadUpdate">⬇️ 下载更新</button>
+          <button id="btn-install-update" class="ghost" hidden data-i18n="settings.restartUpdate">🔄 立即重启更新</button>
+          <button id="btn-open-update" class="ghost" hidden data-i18n="settings.openRelease">↗️ 打开下载页</button>
+        </div>
+        <details id="update-notes-box" hidden>
+          <summary data-i18n="settings.updateNotes">更新日志</summary>
+          <pre id="update-notes"></pre>
+        </details>
       </section>
       </div>
     </div>

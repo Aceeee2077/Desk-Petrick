@@ -82,6 +82,13 @@ let config: AppConfig = {
   hourlyChime: true,
   photoEyes: null,
   autoMove: true,
+  updateAutoCheck: true,
+  updateAutoDownload: true,
+  updateChannel: 'stable',
+  updateDeferredVersion: '',
+  updateDeferredAt: 0,
+  updateNextAutoCheckAt: 0,
+  updateAutoRetry: 0,
 };
 
 // Smoke mode (main loads index.html?smoke=1): skip auto-played idle actions so
@@ -488,11 +495,14 @@ const HIT_SCALE = 4; // 75x75 hit canvas
 let hitCanvas: HTMLCanvasElement | null = null;
 let hitAlpha: Uint8Array | null = null; // JS mirror of the hit map — kills per-move GPU readbacks
 let overPet = false; // whether the cursor is currently over the pet
+let hitMapDirty = true; // the canvas is redrawn every frame; the map itself is lazy
+let lastHitMapRebuild = 0; // performance.now() of the last actual rebuild
+const HIT_MAP_MAX_AGE_MS = 80; // ~12.5 Hz rebuild ceiling even while the cursor moves
 
 /**
- * Rebuild the hit map after each frame's draw. The canvas-to-canvas downscale runs
- * on the GPU; the alpha plane is then read back ONCE per frame into a JS array so
- * mousemove / clicks never stall the pipeline with getImageData calls.
+ * Rebuild the low-res alpha map only when the cursor is asking for a hit test and
+ * the canvas has changed. The canvas-to-canvas downscale runs on the GPU and the
+ * alpha plane is read back at most ~12.5 Hz, instead of on every animation frame.
  */
 function buildHitMap() {
   const hw = Math.ceil(300 / HIT_SCALE);
@@ -510,12 +520,22 @@ function buildHitMap() {
   for (let i = 0, p = 3; i < hw * hh; i++, p += 4) hitAlpha[i] = d[p];
 }
 
+function ensureHitMap(force: boolean) {
+  if (!hitMapDirty) return;
+  const now = performance.now();
+  if (!force && now - lastHitMapRebuild < HIT_MAP_MAX_AGE_MS) return;
+  buildHitMap();
+  hitMapDirty = false;
+  lastHitMapRebuild = now;
+}
+
 /** Whether the cursor (window coordinates) falls on the pet (2D pixel hitmap or 3D raycast) */
-function isOverPet(clientX: number, clientY: number): boolean {
+function isOverPet(clientX: number, clientY: number, forceHitMap = false): boolean {
   if (pet3dActive && pet3d) return pet3d.isOver(clientX, clientY);
-  if (!hitAlpha || !hitCanvas) return false;
   // Coarse bounding-box early-out: the pet never reaches the far corners of the window.
   if (clientX < 70 || clientX > 230 || clientY < 90) return false;
+  ensureHitMap(forceHitMap);
+  if (!hitAlpha || !hitCanvas) return false;
   const hx = Math.floor(clientX / HIT_SCALE);
   const hy = Math.floor(clientY / HIT_SCALE);
   if (hx < 0 || hy < 0 || hx >= hitCanvas.width || hy >= hitCanvas.height) return false;
@@ -979,8 +999,9 @@ function draw() {
     });
   }
 
-  // Rebuild the hit canvas (for per-pixel click detection; skipped in 3D mode which uses raycast)
-  if (!(pet3dActive && pet3d)) buildHitMap();
+  // Mark the per-pixel hit map stale; it is rebuilt lazily on the next cursor move
+  // / click instead of every animation frame (3D mode uses raycast and skips this).
+  if (!(pet3dActive && pet3d)) hitMapDirty = true;
 }
 
 /** Draw a built-in pixel sprite sheet (four illustrated animals or robot). */
@@ -1177,6 +1198,9 @@ function drawPhotoEyesLocal(
 function cutoutBackground(dataUrl: string): Promise<string> {
   return new Promise((resolve) => {
     const img = new Image();
+    // pet-custom:// is a different origin from the file:// page; opt in to CORS so
+    // canvas cutout / WebGL uploads stay readable.
+    if (!dataUrl.startsWith('data:')) img.crossOrigin = 'anonymous';
     img.onload = () => {
       try {
         const w = img.naturalWidth;
@@ -1274,7 +1298,7 @@ function cutoutBackground(dataUrl: string): Promise<string> {
   });
 }
 
-/** Load / refresh the custom appearance (gets a data URL from the main process) */
+/** Load / refresh the custom appearance (gets a pet-custom:// URL from the main process) */
 async function refreshCustomSprite() {
   customSprite = null;
   pet3dActive = false;
@@ -1283,7 +1307,7 @@ async function refreshCustomSprite() {
   if (config.skin !== 'custom') return;
 
   const res = await window.api.getCustomImage();
-  if (!res.ok || !res.dataUrl) {
+  if (!res.ok || !res.url) {
     // Custom skin selected but no file: show a hint and fall back to cat
     showBubble(window.PetricI18n.t('bubble.noCustom'), { ms: 4000 });
     window.api.setConfig({ skin: 'cat' });
@@ -1293,7 +1317,7 @@ async function refreshCustomSprite() {
   // Auto cutout applies to flat image modes (single / billboard), not sheets or 3D models
   const canCutout =
     config.autoCutout && !res.cutoutApplied && (res.mode === 'single' || res.mode === 'billboard');
-  const dataUrl = canCutout ? await cutoutBackground(res.dataUrl) : res.dataUrl;
+  const dataUrl = canCutout ? await cutoutBackground(res.url) : res.url;
 
   if (res.mode === 'model' || res.mode === 'billboard') {
     // 3D scene modes: 'model' = GLB mesh, 'billboard' = 2.5D image plane
@@ -1324,6 +1348,7 @@ async function refreshCustomSprite() {
 function buildCustomSprite(dataUrl: string, mode: CustomImageMode): Promise<CustomSprite | null> {
   return new Promise((resolve) => {
     const img = new Image();
+    if (!dataUrl.startsWith('data:')) img.crossOrigin = 'anonymous';
     img.onload = () => {
       const w = img.naturalWidth;
       const h = img.naturalHeight;
@@ -1503,7 +1528,7 @@ function playChime() {
 function onMouseDown(e: MouseEvent) {
   if (e.button !== 0) return;
   // Per-pixel hit: ignore when the cursor is not on the pet (transparent areas pass clicks to the desktop)
-  if (!isOverPet(e.clientX, e.clientY)) return;
+  if (!isOverPet(e.clientX, e.clientY, true)) return;
   // The second press of a double-click must not start a drag: double-clicks often drift a few
   // pixels (past the 5px drag threshold), which would micro-drag the window and move the chat
   // box around. Suppress drag-start on that press; clicks still register normally.
@@ -1525,8 +1550,26 @@ function onMouseDown(e: MouseEvent) {
 
 function onMouseMove(e: MouseEvent) {
   mouse = { x: e.clientX, y: e.clientY };
-  lastActivity = Date.now();
-  wake();
+
+  // Do not treat a cursor merely crossing the transparent window as "activity":
+  // on Windows the click-through window still forwards every mousemove, which would
+  // otherwise keep the pet awake forever. Only pet pixels / real drags count.
+  const interactive = dragging || dragCandidate;
+  if (!interactive) {
+    const over = isOverPet(e.clientX, e.clientY);
+    if (over !== overPet) {
+      overPet = over;
+      window.api.setClickThrough(!over);
+      canvas.style.cursor = over ? 'grab' : 'default';
+    }
+    if (over || overPet) {
+      lastActivity = Date.now();
+      wake();
+    }
+  } else {
+    lastActivity = Date.now();
+    wake();
+  }
 
   // ---------- Drag state FIRST (before the click-through decision) ----------
   if (dragCandidate && !suppressDrag && !dragging) {
@@ -1564,14 +1607,6 @@ function onMouseMove(e: MouseEvent) {
     // teleport the window) and to renderer screenX/display-scaling mismatches.
     window.api.dragMove();
   } else {
-    // Decide the hit state purely per-pixel (the chat UI now lives in its own window,
-    // so nothing in this window ever needs to force interactivity).
-    const over = isOverPet(e.clientX, e.clientY);
-    if (over !== overPet) {
-      overPet = over;
-      window.api.setClickThrough(!over);
-      canvas.style.cursor = over ? 'grab' : 'default';
-    }
     if (e.buttons === 0 && dragCandidate) {
       // Mouse released outside the window (buttons already cleared) -> end the drag
       endDrag();
@@ -1660,13 +1695,14 @@ window.addEventListener('blur', endDrag);
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   // The context menu also only triggers on pet pixels
-  if (!isOverPet(e.clientX, e.clientY)) return;
+  if (!isOverPet(e.clientX, e.clientY, true)) return;
   lastActivity = Date.now();
   wake();
   window.api.showContextMenu();
 });
 
-canvas.addEventListener('mouseenter', () => {
+canvas.addEventListener('mouseenter', (e) => {
+  if (!isOverPet(e.clientX, e.clientY, true)) return;
   lastActivity = Date.now();
   wake();
 });

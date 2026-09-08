@@ -26,14 +26,14 @@ delete process.env.ELECTRON_RUN_AS_NODE;
 const child = spawn(electronBin, args, { stdio: 'inherit', env: process.env });
 
 child.on('error', (err) => {
-  console.error('[Petric] 无法启动 Electron:', err.message);
-  console.error('[Petric] 请确认已执行 npm install，且 node_modules/electron/dist/electron.exe 存在。');
+  console.error('[Prismoo] 无法启动 Electron:', err.message);
+  console.error('[Prismoo] 请确认已执行 npm install，且 node_modules/electron/dist/electron.exe 存在。');
   process.exit(1);
 });
 
 child.on('exit', (code, signal) => {
   if (signal) {
-    console.error('[Petric] Electron 被信号终止:', signal);
+    console.error('[Prismoo] Electron 被信号终止:', signal);
     process.exit(1);
   }
   process.exit(code ?? 0);

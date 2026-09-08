@@ -192,6 +192,23 @@ async function initSettings() {
   const weatherEnabledEl = $<HTMLInputElement>('weather-enabled');
   const hourlyChimeEl = $<HTMLInputElement>('hourly-chime');
   const autoMoveEl = $<HTMLInputElement>('auto-move');
+  const updateAutoCheckEl = $<HTMLInputElement>('update-auto-check');
+  const updateAutoDownloadEl = $<HTMLInputElement>('update-auto-download');
+  const updateChannelButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('#update-channel-seg button'),
+  );
+  const updateVersionEl = $<HTMLSpanElement>('update-version');
+  const appVersionEl = $<HTMLElement>('app-version');
+  const updateStatusEl = $<HTMLSpanElement>('update-status');
+  const updateProgressRow = $<HTMLElement>('update-progress-row');
+  const updateProgressBar = $<HTMLElement>('update-progress-bar');
+  const updateProgressText = $<HTMLSpanElement>('update-progress-text');
+  const updateNotesBox = $<HTMLElement>('update-notes-box');
+  const updateNotesEl = $<HTMLPreElement>('update-notes');
+  const btnCheckUpdate = $<HTMLButtonElement>('btn-check-update');
+  const btnDownloadUpdate = $<HTMLButtonElement>('btn-download-update');
+  const btnInstallUpdate = $<HTMLButtonElement>('btn-install-update');
+  const btnOpenUpdate = $<HTMLButtonElement>('btn-open-update');
   const accessoryButtons = Array.from(
     document.querySelectorAll<HTMLButtonElement>('#accessory-seg button'),
   );
@@ -203,6 +220,7 @@ async function initSettings() {
   const eyesCanvasRow = $<HTMLElement>('eyes-preview-row');
   const eyesCanvas = $<HTMLCanvasElement>('eyes-preview-canvas');
   affinityDisplayEl = $<HTMLSpanElement>('affinity-display');
+  let lastUpdateState: UpdateState | null = null;
 
   // ---------- Photo-pet eye marking ----------
   let eyesImg: HTMLImageElement | null = null;
@@ -248,17 +266,18 @@ async function initSettings() {
     eyePicks = [];
     eyesCanvasRow.hidden = false;
     const res = await window.api.getCustomImage();
-    if (!res.ok || !res.dataUrl) {
+    if (!res.ok || !res.url) {
       eyesStatusEl.textContent = window.PetricI18n.t('settings.eyesFail');
       return;
     }
     eyesStatusEl.textContent = window.PetricI18n.t('settings.markEyesHint');
-    const dataUrl = res.dataUrl; // narrowed to string by the guard above
+    const resourceUrl = res.url; // narrowed to string by the guard above
     const img = new Image();
+    if (!resourceUrl.startsWith('data:')) img.crossOrigin = 'anonymous';
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve();
       img.onerror = () => reject();
-      img.src = dataUrl;
+      img.src = resourceUrl;
     }).catch(() => undefined);
     if (!img.naturalWidth) {
       eyesStatusEl.textContent = window.PetricI18n.t('settings.eyesFail');
@@ -341,10 +360,75 @@ async function initSettings() {
   weatherEnabledEl.checked = cfg.weatherEnabled;
   hourlyChimeEl.checked = cfg.hourlyChime;
   autoMoveEl.checked = cfg.autoMove;
+  updateAutoCheckEl.checked = cfg.updateAutoCheck;
+  updateAutoDownloadEl.checked = cfg.updateAutoDownload;
+  updateChannelButtons.forEach((b) => b.classList.toggle('active', b.dataset.channel === cfg.updateChannel));
   accessoryButtons.forEach((b) => b.classList.toggle('active', b.dataset.accessory === cfg.accessory));
   affinityValue = cfg.affinity;
   renderAffinityDisplay();
   renderStats(cfg);
+
+  // ---------- Update status / progress ----------
+  function renderUpdateState(s: UpdateState) {
+    lastUpdateState = s;
+    const t = window.PetricI18n.t;
+    const current = s.currentVersion ? 'v' + s.currentVersion : '—';
+    const offered = s.version ? 'v' + s.version : '';
+    updateVersionEl.textContent = current;
+    appVersionEl.textContent = s.currentVersion ? 'v' + s.currentVersion : '';
+    updateStatusEl.classList.toggle('err', s.status === 'error');
+
+    switch (s.status) {
+      case 'checking':
+        updateStatusEl.textContent = t('settings.updateChecking');
+        break;
+      case 'available':
+        updateStatusEl.textContent = offered
+          ? t('settings.updateAvailable', { v: offered })
+          : t('settings.updateIdle');
+        break;
+      case 'downloading':
+        updateStatusEl.textContent = t('settings.updateDownloading', {
+          p: Math.round(s.progress?.percent ?? 0),
+        });
+        break;
+      case 'downloaded':
+        updateStatusEl.textContent = offered ? t('settings.updateDownloaded', { v: offered }) : t('settings.updateIdle');
+        break;
+      case 'up-to-date':
+        updateStatusEl.textContent = t('settings.updateUpToDate', { v: current });
+        break;
+      case 'dev':
+        updateStatusEl.textContent = t('settings.updateDev');
+        break;
+      case 'error':
+        updateStatusEl.textContent = t('settings.updateError');
+        updateStatusEl.title = s.error || '';
+        break;
+      default:
+        updateStatusEl.textContent = t('settings.updateIdle');
+    }
+
+    const downloading = s.status === 'downloading';
+    const pct = Math.min(100, Math.max(0, Math.round(s.progress?.percent ?? 0)));
+    updateProgressRow.hidden = !downloading;
+    if (downloading) {
+      updateProgressBar.style.width = pct + '%';
+      updateProgressText.textContent = pct + '%';
+    }
+
+    btnCheckUpdate.disabled =
+      s.status === 'checking' || s.status === 'downloading' || s.status === 'dev';
+    btnDownloadUpdate.hidden = !(s.status === 'available' && !s.autoDownload && !s.manualUrl);
+    btnInstallUpdate.hidden = s.status !== 'downloaded';
+    btnOpenUpdate.hidden = !(
+      s.manualUrl && (s.status === 'available' || s.status === 'dev' || s.status === 'error')
+    );
+
+    const notes = s.notes || '';
+    updateNotesBox.hidden = !(notes && (s.status === 'available' || s.status === 'downloaded'));
+    updateNotesEl.textContent = notes;
+  }
 
   // ---------- Event bindings ----------
   // Language switch
@@ -356,6 +440,7 @@ async function initSettings() {
       const payload = await window.api.getI18n();
       window.PetricI18n.setLocaleData(payload.locale, payload.dict);
       applyI18n();
+      renderUpdateState(await window.api.updateGetState());
     });
   });
 
@@ -387,7 +472,7 @@ async function initSettings() {
     customStatusEl.classList.remove('err');
     customStatusEl.textContent = window.PetricI18n.t('settings.choosing');
     const r = await window.api.pickCustomImage();
-    if (r.ok && r.dataUrl) {
+    if (r.ok && r.url) {
       await window.api.setConfig({
         skin: 'custom',
         customImagePath: r.path || '',
@@ -496,6 +581,38 @@ async function initSettings() {
   );
   autoMoveEl.addEventListener('change', () => window.api.setConfig({ autoMove: autoMoveEl.checked }));
 
+  // Update preferences
+  updateAutoCheckEl.addEventListener('change', () =>
+    window.api.setConfig({ updateAutoCheck: updateAutoCheckEl.checked }),
+  );
+  updateAutoDownloadEl.addEventListener('change', () =>
+    window.api.setConfig({ updateAutoDownload: updateAutoDownloadEl.checked }),
+  );
+  updateChannelButtons.forEach((b) => {
+    b.addEventListener('click', () => {
+      updateChannelButtons.forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      window.api.setConfig({ updateChannel: b.dataset.channel as UpdateChannel });
+    });
+  });
+
+  btnCheckUpdate.addEventListener('click', async () => {
+    btnCheckUpdate.disabled = true;
+    renderUpdateState(await window.api.updateCheck());
+  });
+  btnDownloadUpdate.addEventListener('click', async () => {
+    renderUpdateState(await window.api.updateDownload());
+  });
+  btnInstallUpdate.addEventListener('click', async () => {
+    btnInstallUpdate.disabled = true;
+    await window.api.updateInstall();
+  });
+  btnOpenUpdate.addEventListener('click', () => void window.api.updateOpenPage());
+
+  // Update progress / status pushed by the main process (plus one initial snapshot).
+  window.api.onUpdateState(renderUpdateState);
+  renderUpdateState(await window.api.updateGetState());
+
   // Keep the affinity / focus / theme / stats UI in sync with changes made elsewhere (e.g. by the pet window)
   window.api.onConfigChanged((cfg) => {
     skinButtons.forEach((b) => b.classList.toggle('active', b.dataset.skin === cfg.skin));
@@ -510,6 +627,9 @@ async function initSettings() {
     weatherEnabledEl.checked = cfg.weatherEnabled;
     hourlyChimeEl.checked = cfg.hourlyChime;
     autoMoveEl.checked = cfg.autoMove;
+    updateAutoCheckEl.checked = cfg.updateAutoCheck;
+    updateAutoDownloadEl.checked = cfg.updateAutoDownload;
+    updateChannelButtons.forEach((b) => b.classList.toggle('active', b.dataset.channel === cfg.updateChannel));
     themeButtons.forEach((b) => b.classList.toggle('active', b.dataset.theme === cfg.theme));
     accessoryButtons.forEach((b) => b.classList.toggle('active', b.dataset.accessory === cfg.accessory));
     document.documentElement.dataset.theme = cfg.theme;

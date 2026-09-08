@@ -1,0 +1,25 @@
+<svg width="512" height="512" viewBox="0 0 512 512">
+  <rect x="18" y="18" width="476" height="476" rx="120" fill="#eaf6ff"/>
+  <defs>
+    <linearGradient id="chrome" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.25" stop-color="#cfd8ff"/>
+      <stop offset="0.5" stop-color="#ffc2e8"/>
+      <stop offset="0.75" stop-color="#c8f7ff"/>
+      <stop offset="1" stop-color="#fff"/>
+    </linearGradient>
+  </defs>
+
+  <path d="M126 292 C124 224 140 172 154 130 C186 108 232 114 254 162 C216 212 168 252 126 292 Z" fill="url(#chrome)"/>
+  <path d="M386 292 C388 224 372 172 358 130 C326 108 280 114 258 162 C296 212 344 252 386 292 Z" fill="url(#chrome)"/>
+
+  <ellipse cx="256" cy="306" rx="158" ry="140" fill="url(#chrome)"/>
+
+  <ellipse cx="196" cy="258" rx="22" ry="13" fill="#ffffff" opacity="0.75" transform="rotate(-18 196 258)"/>
+  <circle cx="168" cy="220" r="6" fill="#ffffff" opacity="0.8"/>
+
+  <circle cx="214" cy="298" r="20" fill="#2f2f4a"/>
+  <circle cx="298" cy="298" r="20" fill="#2f2f4a"/>
+  <circle cx="221" cy="289" r="6" fill="#fff"/>
+  <circle cx="305" cy="289" r="6" fill="#fff"/>
+</svg>

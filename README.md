@@ -1,4 +1,4 @@
-# 🐾 Petric · 跨平台桌面宠物
+# 🐾 Prismoo · 跨平台桌面宠物
 
 > **中文** | [English](./README-EN.md)
 
@@ -8,7 +8,7 @@
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-8A2BE2)
 ![3D](https://img.shields.io/badge/3D-three.js-000000?logo=three.js&logoColor=white)
 
-![petric badge](./docs/petric-badge.png)
+![prismoo brand](./docs/prismoo-brand.png)
 
 > Electron + TypeScript + HTML5 Canvas 构建的透明置顶桌面宠物（MVP）。
 > 支持 Windows / macOS / Linux，像素风精灵动画、拖拽行走、睡眠、点击互动与 OpenAI 兼容 AI 对话。
@@ -19,7 +19,7 @@
 ## 📥 下载
 
 普通用户请前往 [GitHub Releases](https://github.com/Aceeee2077/Desk-Petrick/releases/latest)
-下载最新的 `Petric Setup x.y.z.exe` 安装包；`win-unpacked/Petric.exe` 依赖同目录文件，不能单独分发。
+下载最新的 `Prismoo-Setup-x.y.z.exe` 安装包；`win-unpacked/Prismoo.exe` 依赖同目录文件，不能单独分发。
 
 
 ---
@@ -145,8 +145,8 @@ npm run dist:win      # 在 Windows 上打包 Windows 版
   安装，会引导打开下载页手动更新。
 - 每次发版时，把安装包连同 electron-builder 生成的**元数据文件**一起挂到对应 tag 的
   GitHub Release：
-  - Windows：`Petric Setup x.y.z.exe` + `latest.yml` + `.blockmap`
-  - Linux：`Petric-x.y.z.AppImage` + `latest-linux.yml`
+  - Windows：`Prismoo-Setup-x.y.z.exe` + `latest.yml` + `.blockmap`
+  - Linux：`Prismoo-x.y.z.AppImage` + `latest-linux.yml`
   - tag 必须与版本号一致（当前版本 `0.3.1` 对应 `v0.3.1`）。
 - 本地构建不会自动上传：`npm run dist:win` 后把 `release/` 产物手动挂到 Release 即可。
 - 自动更新只在**已安装的打包版**里生效；`npm run dev` 开发模式不触发。
@@ -379,7 +379,7 @@ npm run build && node scripts/run-electron.mjs . --screenshot
 
 ## 📄 许可证
 
-[MIT](./LICENSE) © Petric Contributors
+[MIT](./LICENSE) © Prismoo Contributors
 
 - 灰猫 / 狐狸 / 兔子 / 布噜动画素材基于项目提供的参考图生成并随仓库分发；机器人由本项目程序化生成。
 - 3D 渲染使用 [three.js](https://threejs.org/)（MIT，已本地化到 `src/assets/vendor/`）。

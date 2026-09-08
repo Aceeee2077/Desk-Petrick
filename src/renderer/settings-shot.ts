@@ -131,7 +131,7 @@ settingsShotWindow.__drawSettingsShot = (locale: Locale, dict: Record<string, I1
   sc.stroke();
 
   // Header
-  text('🐾 Petric Settings', 18, 32, 15, '#4a2c14', 800);
+  text('🐾 Prismoo Settings', 18, 32, 15, '#4a2c14', 800);
   text('✕', W - 24, 32, 14, '#b45309', 400, 'center');
 
   // ---------- Left column: language / theme, pet, focus mode ----------

@@ -105,6 +105,7 @@ const Petric3D: Petric3DHandle = (() => {
         return;
       }
       const loader = new THREE.GLTFLoader();
+      loader.setCrossOrigin('anonymous');
       loader.load(
         dataUrl,
         (gltf: any) => {
@@ -146,6 +147,7 @@ const Petric3D: Petric3DHandle = (() => {
         return;
       }
       const loader = new THREE.TextureLoader();
+      loader.setCrossOrigin('anonymous');
       loader.load(
         dataUrl,
         (texture: any) => {

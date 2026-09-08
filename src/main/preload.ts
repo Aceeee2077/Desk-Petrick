@@ -22,6 +22,11 @@ const api: PetApi = {
   aiChat: (messages) => ipcRenderer.invoke('ai:chat', messages),
   autoLaunchGet: () => ipcRenderer.invoke('autolaunch:get'),
   autoLaunchSet: (enabled) => ipcRenderer.invoke('autolaunch:set', enabled),
+  updateGetState: () => ipcRenderer.invoke('update:get'),
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateDownload: () => ipcRenderer.invoke('update:download'),
+  updateInstall: () => ipcRenderer.invoke('update:install'),
+  updateOpenPage: () => ipcRenderer.invoke('update:open-page'),
   onConfigChanged: (cb) => {
     const listener = (_e: Electron.IpcRendererEvent, cfg: AppConfig) => cb(cfg);
     ipcRenderer.on('config-changed', listener);
@@ -58,6 +63,13 @@ const api: PetApi = {
     ipcRenderer.on('pet:notice', listener);
     return () => {
       ipcRenderer.removeListener('pet:notice', listener);
+    };
+  },
+  onUpdateState: (cb) => {
+    const listener = (_e: Electron.IpcRendererEvent, state: UpdateState) => cb(state);
+    ipcRenderer.on('update-state', listener);
+    return () => {
+      ipcRenderer.removeListener('update-state', listener);
     };
   },
   getCustomImage: () => ipcRenderer.invoke('custom:get'),

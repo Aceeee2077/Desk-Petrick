@@ -3,10 +3,30 @@
 // Responsibilities: transparent always-on-top window, tray, IPC, AI chat (network requests), auto-launch at login, config persistence.
 // ============================================================================
 
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, Tray, nativeImage, screen } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  net,
+  powerMonitor,
+  protocol,
+  screen,
+  shell,
+  Tray,
+} from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { DEFAULT_CONFIG, loadConfig, saveConfig } from '../shared/config';
+import { pathToFileURL } from 'url';
+import {
+  DEFAULT_CONFIG,
+  ensureSecretsEncrypted,
+  flushConfigSync,
+  loadConfig,
+  saveConfig,
+} from '../shared/config';
 import { encodePng } from '../shared/png';
 import { getDict, makeT } from '../shared/i18n';
 import { removeImageBackground } from './background-removal';
@@ -28,6 +48,23 @@ import {
 // These must be set before the app is ready.
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
+
+// Custom file scheme used by custom pet appearances: renderers receive a small
+// pet-custom:// URL and the main process streams the real file, so a 60MB GLB
+// never crosses the IPC bridge as a base64 string.
+const CUSTOM_SCHEME = 'pet-custom';
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: CUSTOM_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+]);
 
 /** Translate a key using the current persisted locale (re-evaluated per call, so a locale switch takes effect immediately). */
 function t(key: string, params?: Record<string, string | number>): string | I18nValue {
@@ -75,9 +112,13 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    preserveLegacyUserData();
     applyAutoLaunchFromConfig();
     recordLaunchStats();
+    ensureSecretsEncrypted();
+    registerCustomProtocol();
     createPetWindow();
+    registerSystemWatchdogs();
     createTray();
     registerIpc();
     if (app.isPackaged && !IS_SMOKE && !IS_SCREENSHOT) setupAutoUpdate();
@@ -101,7 +142,30 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   tray?.destroy();
+  flushConfigSync();
 });
+
+/**
+ * Petric -> Prismoo userData compatibility: point the renamed app back at the old
+ * "petric"/"Petric" profile when it exists, so settings, chats and custom pets are
+ * preserved for users who update instead of doing a fresh install.
+ */
+function preserveLegacyUserData() {
+  const current = app.getPath('userData');
+  const appData = app.getPath('appData');
+  const candidates = [path.join(appData, 'petric'), path.join(appData, 'Petric')];
+  const legacy = candidates.find((dir) => {
+    try {
+      return fs.statSync(dir).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+  if (legacy && path.normalize(legacy) !== path.normalize(current)) {
+    app.setPath('userData', legacy);
+    console.log('[main] 已沿用旧版用户数据目录:', legacy);
+  }
+}
 
 // ---------- Auto-launch at login ----------
 function applyAutoLaunchFromConfig() {
@@ -395,6 +459,28 @@ function autoJumpWindow(height: number, duration: number) {
   tick();
 }
 
+/** Keep the pet reachable across monitor topology / power state changes. */
+function registerSystemWatchdogs() {
+  const rehomePet = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const [x, y] = mainWindow.getPosition();
+    movePetTo(x, y); // clamps to the nearest display work area
+  };
+  screen.on('display-added', rehomePet);
+  screen.on('display-removed', rehomePet);
+  screen.on('display-metrics-changed', rehomePet);
+  powerMonitor.on('suspend', () => {
+    persistPosition();
+    autoMoveStep = null;
+    stopAutoMoveLoop();
+  });
+  powerMonitor.on('resume', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const [x, y] = mainWindow.getPosition();
+    movePetTo(x, y);
+  });
+}
+
 function applyWindowOpacity() {
   const o = loadConfig().opacity;
   mainWindow?.setOpacity(typeof o === 'number' ? Math.min(1, Math.max(0.5, o)) : 1);
@@ -408,7 +494,7 @@ function createTray() {
     rebuildTrayMenu();
     tray.on('click', () => openSettings()); // Left-click the tray icon on Windows
   } catch (err) {
-    console.error('[Petric] 托盘创建失败（可忽略）:', err);
+    console.error('[Prismoo] 托盘创建失败（可忽略）:', err);
   }
 }
 
@@ -419,7 +505,11 @@ function rebuildTrayMenu() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: ts('menu.chat'), click: () => openChatWindow() },
-      { label: ts('menu.checkUpdate'), click: () => void checkUpdates(true) },
+      {
+        label: ts('menu.checkUpdate'),
+        enabled: !isUpdateBusy(),
+        click: () => void checkUpdates(true, 'menu'),
+      },
       { label: ts('menu.settings'), click: () => openSettings() },
       { label: ts('menu.resetPos'), click: () => mainWindow && centerWindow(mainWindow) },
       { type: 'separator' },
@@ -495,22 +585,56 @@ function openChatWindow() {
 
 // ---------- Auto update (GitHub Releases via electron-updater) ----------
 // Packaged builds check the public GitHub Releases of this repo shortly after launch.
-// When a newer release exists the update downloads in the background, then the user gets
-// a one-click "restart & update" dialog. macOS unsigned builds cannot auto-install, so
-// they fall back to opening the release page. Dev mode never auto-updates.
+// The manager keeps one live UpdateState for the settings panel / tray / pet bubble:
+// check requests are serialized, downloads surface progress, failures schedule an
+// exponential backoff retry, and a "later" choice is remembered across restarts.
+// Dev mode never auto-updates; macOS unsigned builds fall back to the release page.
 const UPDATE_OWNER = 'Aceeee2077';
 const UPDATE_REPO = 'Desk-Petrick';
 
+/** How often a successful auto check runs again (manual checks reset the same timer). */
+const UPDATE_OK_CHECK_MS = 6 * 60 * 60 * 1000;
+/** After choosing "later", wait this long before offering the same version again. */
+const UPDATE_DEFER_PROMPT_MS = 24 * 60 * 60 * 1000;
+/** Automatic-check backoff ladder: 30 min → 2 h → 24 h. */
+const UPDATE_RETRY_DELAYS_MS = [30 * 60 * 1000, 2 * 60 * 60 * 1000, 24 * 60 * 60 * 1000];
+
 interface AutoUpdaterLike {
   autoDownload: boolean;
+  autoInstallOnAppQuit: boolean;
+  allowPrerelease: boolean;
   on(event: string, listener: (info?: any) => void): void;
   checkForUpdates(): Promise<unknown>;
+  downloadUpdate?(): Promise<unknown>;
   quitAndInstall(): void;
+}
+
+/** Who asked for the current check; decides whether native dialogs / auto retries apply. */
+type UpdateCheckSource = 'auto' | 'menu' | 'settings';
+
+interface GitHubRelease {
+  tag_name?: string;
+  html_url?: string;
+  body?: string;
 }
 
 let autoUpdaterHandle: AutoUpdaterLike | null = null;
 let updateDialogOpen = false;
-let manualCheckPending = false;
+let updateCheckPromise: Promise<UpdateState> | null = null;
+let updateAutoTimer: NodeJS.Timeout | null = null;
+let updateCheckSource: UpdateCheckSource = 'auto';
+let updateInFlightWasAuto = false;
+let updateLastNoticePct = -1;
+const releaseNotesCache = new Map<string, string>();
+
+/** Live status mirrored to settings (preferences live in config; merged on broadcast). */
+let updateState: UpdateState = {
+  status: 'idle',
+  currentVersion: '',
+  autoCheck: true,
+  autoDownload: true,
+  channel: 'stable',
+};
 
 /** Load electron-updater only when it is available (it is bundled into packaged builds). */
 function loadAutoUpdater(): AutoUpdaterLike | null {
@@ -521,6 +645,11 @@ function loadAutoUpdater(): AutoUpdaterLike | null {
   } catch {
     return null;
   }
+}
+
+/** Normalize "v0.3.0" / "0.3.0" to "0.3.0" (compareVersions tolerates both anyway). */
+function cleanVersion(v: string): string {
+  return String(v || '').replace(/^v/i, '').trim();
 }
 
 /** Compare two semver strings ("v0.3.0" or "0.3.0"); 1 = a newer, -1 = a older, 0 = equal. */
@@ -534,68 +663,392 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
+function updatePageUrl(): string {
+  return `https://github.com/${UPDATE_OWNER}/${UPDATE_REPO}/releases/latest`;
+}
+
+/** True while a check or a background download is running (new checks would overlap). */
+function isUpdateBusy(): boolean {
+  return Boolean(updateCheckPromise) || updateState.status === 'checking' || updateState.status === 'downloading';
+}
+
 /** Ask the pet window to show a localized notice bubble (e.g. an update is downloading). */
 function noticePet(text: string) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('pet:notice', text);
 }
 
-/** Wire electron-updater events + kick off the first background check 8 s after launch. */
+/** Snapshot used by IPC / broadcasts: preferences are always read from disk-backed config. */
+function getUpdateStateSnapshot(): UpdateState {
+  const cfg = loadConfig();
+  const base: UpdateState = {
+    ...updateState,
+    currentVersion: cleanVersion(app.getVersion()),
+    autoCheck: cfg.updateAutoCheck,
+    autoDownload: cfg.updateAutoDownload,
+    channel: cfg.updateChannel,
+  };
+  if (!app.isPackaged) {
+    return {
+      ...base,
+      status: 'dev',
+      error: updateState.error || ts('update.devUnsupported'),
+      manualUrl: updatePageUrl(),
+    };
+  }
+  return base;
+}
+
+/** Send the latest snapshot to every open window (settings shows progress / buttons). */
+function broadcastUpdateState() {
+  const s = getUpdateStateSnapshot();
+  for (const win of [mainWindow, settingsWindow, chatWindow]) {
+    if (win && !win.isDestroyed()) win.webContents.send('update-state', s);
+  }
+  rebuildTrayMenu();
+}
+
+/** Apply a partial live-state change, broadcast it, and refresh tray enabled state. */
+function setUpdateState(patch: Partial<UpdateState>) {
+  updateState = { ...updateState, ...patch };
+  broadcastUpdateState();
+}
+
+/** Mirror update preferences onto electron-updater before each check / when changed. */
+function applyUpdatePrefs() {
+  if (!autoUpdaterHandle) return;
+  const cfg = loadConfig();
+  autoUpdaterHandle.autoDownload = cfg.updateAutoDownload;
+  autoUpdaterHandle.allowPrerelease = cfg.updateChannel === 'prerelease';
+  // A "later" answer still installs cleanly when the user finally quits the app.
+  autoUpdaterHandle.autoInstallOnAppQuit = true;
+}
+
+function clearAutoUpdateTimer() {
+  if (updateAutoTimer) {
+    clearTimeout(updateAutoTimer);
+    updateAutoTimer = null;
+  }
+}
+
+/** Schedule the next automatic check. Delays are clamped to [1 s, 7 days]. */
+function scheduleAutoUpdate(delayMs: number) {
+  clearAutoUpdateTimer();
+  if (!loadConfig().updateAutoCheck) return;
+  const delay = Math.max(1000, Math.min(7 * 24 * 60 * 60 * 1000, delayMs));
+  updateAutoTimer = setTimeout(() => {
+    updateAutoTimer = null;
+    if (app.isPackaged) void checkUpdates(false, 'auto');
+  }, delay);
+}
+
+/** Persist the next due time and arm the timer (used by both success and failure paths). */
+function scheduleNextAutoUpdate(delayMs: number, retryIndex = 0) {
+  if (!loadConfig().updateAutoCheck) return;
+  saveConfig({
+    updateNextAutoCheckAt: Date.now() + delayMs,
+    updateAutoRetry: retryIndex,
+  });
+  scheduleAutoUpdate(delayMs);
+}
+
+function formatDelay(ms: number): string {
+  if (ms < 60 * 60 * 1000) return ts('update.delayMin', { n: Math.round(ms / 60000) });
+  if (ms < 24 * 60 * 60 * 1000) return ts('update.delayHour', { n: Math.round(ms / 3600000) });
+  return ts('update.delayHour', { n: Math.round(ms / 3600000 / 24) * 24 });
+}
+
+function humanError(err: unknown): string {
+  const s = err instanceof Error ? err.message : String(err);
+  return s.slice(0, 140) || 'unknown';
+}
+
+/** Fetch release info from the GitHub API (public repo, no token required). */
+async function fetchGitHubRelease(includePrerelease: boolean): Promise<GitHubRelease | null> {
+  const suffix = includePrerelease ? 'releases?per_page=20' : 'releases/latest';
+  const url = `https://api.github.com/repos/${UPDATE_OWNER}/${UPDATE_REPO}/${suffix}`;
+  const res = await fetchWithTimeout(url, 10000);
+  if (!res.ok) throw new Error(`GitHub http ${res.status}`);
+  const data = (await res.json()) as GitHubRelease | GitHubRelease[];
+  if (Array.isArray(data)) {
+    const rel = data.find((r) => r.tag_name && !String(r.tag_name).toLowerCase().includes('draft'));
+    return rel ?? null;
+  }
+  return data.tag_name ? data : null;
+}
+
+/** Release notes for a concrete version, cached so a re-download never re-fetches. */
+async function fetchReleaseNotes(version: string): Promise<string | undefined> {
+  const key = cleanVersion(version);
+  if (releaseNotesCache.has(key)) return releaseNotesCache.get(key);
+  try {
+    const url = `https://api.github.com/repos/${UPDATE_OWNER}/${UPDATE_REPO}/releases/tags/v${key}`;
+    const res = await fetchWithTimeout(url, 10000);
+    if (!res.ok) return undefined;
+    const rel = (await res.json()) as GitHubRelease;
+    const body = (rel.body || '').trim().slice(0, 6000);
+    releaseNotesCache.set(key, body);
+    return body || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Wire electron-updater events once; the first check is scheduled shortly after launch. */
 function setupAutoUpdate() {
-  if (process.platform === 'darwin') return; // unsigned mac builds update manually instead
   autoUpdaterHandle = loadAutoUpdater();
   if (!autoUpdaterHandle) {
     console.warn('[update] electron-updater 不可用（依赖未安装，或未以打包形式运行）');
+    setUpdateState({ status: 'error', error: ts('update.checkFailed') });
     return;
   }
+  applyUpdatePrefs();
   const updater = autoUpdaterHandle;
-  updater.autoDownload = true;
-  updater.on('update-available', (info) => {
-    const v = info?.version ? 'v' + info.version : '';
-    console.log('[update] 发现新版本:', info?.version);
-    if (v) noticePet(ts('update.available', { v }));
+
+  updater.on('checking-for-update', () => {
+    setUpdateState({ status: 'checking', error: undefined, notes: undefined });
   });
-  updater.on('update-downloaded', (info) => {
-    console.log('[update] 新版本已下载:', info?.version);
-    void promptRestartAndUpdate(info?.version || '');
+  updater.on('update-available', (info) => {
+    void handleUpdateAvailable(info);
   });
   updater.on('update-not-available', () => {
-    console.log('[update] 已是最新版本');
-    if (manualCheckPending) {
-      manualCheckPending = false;
-      void dialog.showMessageBox({ type: 'info', message: ts('update.none', { v: 'v' + app.getVersion() }) });
-    }
+    void handleUpdateNotAvailable();
   });
-  updater.on('error', (err) => console.error('[update] 检查失败:', err));
-  setTimeout(() => void checkUpdates(false), 8000);
+  updater.on('download-progress', (progress) => {
+    handleDownloadProgress(progress);
+  });
+  updater.on('update-downloaded', (info) => {
+    void handleUpdateDownloaded(info);
+  });
+  updater.on('error', (err) => {
+    void handleUpdateError(err);
+  });
+
+  // After a successful quitAndInstall / deferred auto-install-on-quit, tell the pet
+  // that it is on the new version (only when this launch is actually newer).
+  const cfg = loadConfig();
+  const deferred = cfg.updateDeferredVersion;
+  if (deferred && cfg.updateDeferredAt > 0 && compareVersions(app.getVersion(), deferred) >= 0) {
+    const v = 'v' + deferred;
+    setTimeout(() => {
+      noticePet(ts('update.installed', { v }));
+      saveConfig({ updateDeferredVersion: '', updateDeferredAt: 0 });
+    }, 4000);
+    return; // An update was just applied; do not also auto-check on this launch.
+  }
+
+  if (!cfg.updateAutoCheck) return;
+  const dueAt = cfg.updateNextAutoCheckAt || 0;
+  const wait = Math.max(0, dueAt - Date.now());
+  scheduleAutoUpdate(wait > 0 ? wait : 8000);
 }
 
-async function checkUpdates(manual: boolean) {
+async function checkUpdates(manual: boolean, source: UpdateCheckSource = 'auto'): Promise<UpdateState> {
   if (!app.isPackaged) {
-    if (manual) {
+    setUpdateState({ status: 'dev', error: ts('update.devUnsupported'), manualUrl: updatePageUrl() });
+    if (manual && source === 'menu') {
       await dialog.showMessageBox({ type: 'info', message: ts('update.devUnsupported') });
     }
-    return;
+    return getUpdateStateSnapshot();
   }
-  // macOS (unsigned) and any build without electron-updater use the manual GitHub path
-  if (process.platform === 'darwin' || !autoUpdaterHandle) {
-    if (manual) await checkGitHubManual();
-    return;
+  if (isUpdateBusy()) {
+    if (manual && source === 'menu') {
+      await dialog.showMessageBox({ type: 'info', message: ts('update.busy') });
+    }
+    return updateCheckPromise ?? getUpdateStateSnapshot();
   }
-  if (manual) manualCheckPending = true;
+  if (!autoUpdaterHandle) autoUpdaterHandle = loadAutoUpdater();
+  if (!autoUpdaterHandle) {
+    return checkGitHubRelease(manual, source);
+  }
+
+  updateCheckSource = source;
+  updateInFlightWasAuto = source === 'auto';
+  updateLastNoticePct = -1;
+  applyUpdatePrefs();
+  setUpdateState({ status: 'checking', error: undefined, notes: undefined });
+  if (manual) noticePet(ts('update.checking'));
+
+  const p = (async () => {
+    try {
+      await autoUpdaterHandle!.checkForUpdates();
+      return getUpdateStateSnapshot();
+    } catch (err) {
+      // Unsigned macOS builds throw here because they cannot verify / install an
+      // update; fall back to the GitHub API so users still see the new release.
+      if (process.platform === 'darwin') {
+        return checkGitHubRelease(manual, source);
+      }
+      return handleUpdateError(err);
+    }
+  })();
+  updateCheckPromise = p;
   try {
-    await autoUpdaterHandle.checkForUpdates();
-  } catch (err) {
-    manualCheckPending = false;
-    console.error('[update] checkForUpdates 失败:', err);
-    if (manual) await dialog.showMessageBox({ type: 'error', message: ts('update.checkFailed') });
+    return await p;
+  } finally {
+    updateCheckPromise = null;
+    updateInFlightWasAuto = false;
+    broadcastUpdateState();
   }
 }
 
-/** Offer the Discord-style "restart & update" once a new version finished downloading. */
+async function handleUpdateAvailable(info: any) {
+  const version = cleanVersion(info?.version || updateState.version || '');
+  if (!version) return;
+  updateLastNoticePct = -1;
+  const cfg = loadConfig();
+  const manual = updateCheckSource !== 'auto';
+  const isNewOffer = updateState.version !== version;
+  setUpdateState({
+    status: 'available',
+    version,
+    progress: undefined,
+    error: undefined,
+    notes: updateState.notes,
+  });
+  if (cfg.updateAutoDownload) {
+    if (isNewOffer || manual) noticePet(ts('update.available', { v: 'v' + version }));
+  } else {
+    if (isNewOffer || manual) noticePet(ts('update.availableManual', { v: 'v' + version }));
+    scheduleNextAutoUpdate(UPDATE_OK_CHECK_MS);
+  }
+  void fetchReleaseNotes(version).then((notes) => {
+    if (updateState.version === version && notes) setUpdateState({ notes });
+  });
+  if (manual) void manualNotifyAvailable(version);
+}
+
+async function handleUpdateNotAvailable() {
+  updateInFlightWasAuto = false;
+  setUpdateState({
+    status: 'up-to-date',
+    version: undefined,
+    progress: undefined,
+    error: undefined,
+    notes: undefined,
+  });
+  if (updateCheckSource === 'menu') {
+    await dialog.showMessageBox({ type: 'info', message: ts('update.none', { v: 'v' + app.getVersion() }) });
+  }
+  scheduleNextAutoUpdate(UPDATE_OK_CHECK_MS);
+}
+
+function handleDownloadProgress(progress: any) {
+  const pct = Math.round(Number(progress?.percent) || 0);
+  const version = updateState.version || '';
+  setUpdateState({
+    status: 'downloading',
+    version,
+    progress: {
+      percent: Math.min(100, pct),
+      transferred: Number(progress?.transferred) || 0,
+      total: Number(progress?.total) || 0,
+      bytesPerSecond: Number(progress?.bytesPerSecond) || 0,
+    },
+    error: undefined,
+  });
+  if (!version) return;
+  const chunk = Math.floor(pct / 20);
+  if (chunk !== updateLastNoticePct) {
+    updateLastNoticePct = chunk;
+    noticePet(ts('update.downloadProgress', { v: 'v' + version, p: pct }));
+  }
+}
+
+async function handleUpdateDownloaded(info: any) {
+  const version = cleanVersion(info?.version || updateState.version || '');
+  updateInFlightWasAuto = false;
+  updateLastNoticePct = 5;
+  const cfg = loadConfig();
+  const recentlyDeferred =
+    cfg.updateDeferredVersion === version &&
+    cfg.updateDeferredAt > 0 &&
+    Date.now() - cfg.updateDeferredAt < UPDATE_DEFER_PROMPT_MS;
+  setUpdateState({
+    status: 'downloaded',
+    version: version || updateState.version,
+    progress: {
+      percent: 100,
+      transferred: 0,
+      total: 0,
+      bytesPerSecond: 0,
+    },
+    error: undefined,
+  });
+  if (!version) return;
+  if (!recentlyDeferred) noticePet(ts('update.downloadedNotice', { v: 'v' + version }));
+  // A checked download is a successful end state; the next auto check can wait.
+  scheduleNextAutoUpdate(UPDATE_OK_CHECK_MS);
+  await promptRestartAndUpdate(version);
+}
+
+/** Show the localized error; automatic checks schedule a backoff retry. */
+async function handleUpdateError(err: unknown): Promise<UpdateState> {
+  const message = humanError(err);
+  console.error('[update] 更新失败:', err);
+  const wasAuto = updateInFlightWasAuto;
+  updateInFlightWasAuto = false;
+  setUpdateState({ status: 'error', error: message, progress: undefined });
+
+  if (wasAuto) {
+    const cfg = loadConfig();
+    const attempt = Math.min(cfg.updateAutoRetry || 0, UPDATE_RETRY_DELAYS_MS.length - 1);
+    const delay = UPDATE_RETRY_DELAYS_MS[attempt];
+    scheduleNextAutoUpdate(delay, attempt + 1);
+    noticePet(
+      ts('update.retryNotice', { err: message.slice(0, 80), delay: formatDelay(delay) }),
+    );
+  } else if (updateCheckSource === 'menu') {
+    const r = await dialog.showMessageBox({
+      type: 'error',
+      buttons: [ts('update.open'), ts('update.cancel')],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+      message: ts('update.checkFailed'),
+      detail: updatePageUrl(),
+    });
+    if (r.response === 0) await shell.openExternal(updatePageUrl());
+  }
+  return getUpdateStateSnapshot();
+}
+
+async function manualNotifyAvailable(version: string) {
+  const v = 'v' + version;
+  if (!autoUpdaterHandle?.autoDownload) {
+    const notes = updateState.notes || (await fetchReleaseNotes(version)) || '';
+    const r = await dialog.showMessageBox({
+      type: 'info',
+      buttons: [ts('update.open'), ts('update.cancel')],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+      message: `${ts('update.manualTitle')} ${v}`,
+      detail: `${ts('update.manualBody', { v })}\n${updatePageUrl()}${notes ? '\n\n' + ts('update.notesBlock', { notes }) : ''}`,
+    });
+    if (r.response === 0) await shell.openExternal(updatePageUrl());
+    return;
+  }
+  // autoDownload is on: the pet bubble already announced the new version and the
+  // download is in progress; the ready dialog appears once update-downloaded fires.
+}
+
+/** Offer the Discord-style "restart & update"; "later" is remembered in config. */
 async function promptRestartAndUpdate(version: string) {
   if (updateDialogOpen) return;
+  const cfg = loadConfig();
+  const clean = cleanVersion(version);
+  if (
+    cfg.updateDeferredVersion === clean &&
+    cfg.updateDeferredAt > 0 &&
+    Date.now() - cfg.updateDeferredAt < UPDATE_DEFER_PROMPT_MS
+  ) {
+    noticePet(ts('update.deferred', { v: 'v' + clean }));
+    return;
+  }
+
   updateDialogOpen = true;
-  const v = version ? 'v' + version : 'v' + app.getVersion();
+  const v = 'v' + clean;
+  const notes = updateState.notes || (await fetchReleaseNotes(clean)) || '';
   const res = await dialog.showMessageBox({
     type: 'info',
     buttons: [ts('update.restart'), ts('update.later')],
@@ -603,44 +1056,114 @@ async function promptRestartAndUpdate(version: string) {
     cancelId: 1,
     noLink: true,
     message: ts('update.readyTitle'),
-    detail: ts('update.readyBody', { v }),
+    detail: `${ts('update.readyBody', { v })}${
+      notes ? '\n\n' + ts('update.notesBlock', { notes }) : ''
+    }`,
   });
   updateDialogOpen = false;
-  if (res.response === 0 && autoUpdaterHandle) {
-    try {
-      autoUpdaterHandle.quitAndInstall(); // quits the app, installs, relaunches the new version
-    } catch (err) {
-      console.error('[update] quitAndInstall 失败:', err);
-    }
+  if (res.response === 0) {
+    await installUpdate(clean);
+  } else {
+    await deferUpdate(clean);
   }
 }
 
-/** Manual update check via the GitHub API (used on macOS / without electron-updater). */
-async function checkGitHubManual() {
-  const url = `https://api.github.com/repos/${UPDATE_OWNER}/${UPDATE_REPO}/releases/latest`;
+/** Remember the "later" answer and rely on autoInstallOnAppQuit at the next exit. */
+async function deferUpdate(version: string) {
+  const clean = cleanVersion(version);
+  saveConfig({ updateDeferredVersion: clean, updateDeferredAt: Date.now() });
+  noticePet(ts('update.deferred', { v: 'v' + clean }));
+}
+
+/** Start a fresh download when auto-download is disabled but the user clicks download. */
+async function downloadUpdate(): Promise<UpdateState> {
+  if (!autoUpdaterHandle?.downloadUpdate) {
+    if (process.platform === 'darwin' || !autoUpdaterHandle) {
+      await shell.openExternal(updatePageUrl());
+      return getUpdateStateSnapshot();
+    }
+    setUpdateState({ status: 'error', error: ts('update.checkFailed') });
+    return getUpdateStateSnapshot();
+  }
+  updateCheckSource = 'settings';
+  updateInFlightWasAuto = false;
+  updateLastNoticePct = -1;
+  setUpdateState({ status: 'checking', error: undefined, notes: undefined });
   try {
-    const res = await fetchWithTimeout(url, 8000);
-    if (!res.ok) throw new Error('http ' + res.status);
-    const rel = (await res.json()) as { tag_name?: string; html_url?: string };
-    const tag = rel.tag_name || '';
-    if (tag && compareVersions(tag, app.getVersion()) > 0) {
-      const r = await dialog.showMessageBox({
-        type: 'info',
-        buttons: [ts('update.open'), ts('update.cancel')],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true,
-        message: `${ts('update.manualTitle')} ${tag}`,
-        detail: `${ts('update.manualBody', { v: tag })}\n${rel.html_url || url}`,
-      });
-      if (r.response === 0 && rel.html_url) await shell.openExternal(rel.html_url);
+    await autoUpdaterHandle.downloadUpdate();
+    return getUpdateStateSnapshot();
+  } catch (err) {
+    return handleUpdateError(err);
+  }
+}
+
+/** Save the target version, then quit & install (the new launch reports the update). */
+async function installUpdate(version?: string): Promise<void> {
+  const target = cleanVersion(version || updateState.version || '');
+  if (!target) return;
+  saveConfig({ updateDeferredVersion: target, updateDeferredAt: Date.now() });
+  flushConfigSync(); // the marker must survive quitAndInstall's immediate relaunch
+  if (!autoUpdaterHandle) {
+    await shell.openExternal(updatePageUrl());
+    return;
+  }
+  try {
+    autoUpdaterHandle.quitAndInstall();
+  } catch (err) {
+    console.error('[update] quitAndInstall 失败，已打开下载页:', err);
+    setUpdateState({ status: 'error', error: humanError(err) });
+    saveConfig({ updateDeferredVersion: '', updateDeferredAt: 0 });
+    await shell.openExternal(updatePageUrl());
+  }
+}
+
+/** Manual GitHub fallback: macOS unsigned builds / no electron-updater / dev page. */
+async function checkGitHubRelease(manual: boolean, source: UpdateCheckSource): Promise<UpdateState> {
+  if (!app.isPackaged) {
+    setUpdateState({ status: 'dev', error: ts('update.devUnsupported'), manualUrl: updatePageUrl() });
+    if (manual && source === 'menu') {
+      await dialog.showMessageBox({ type: 'info', message: ts('update.devUnsupported') });
+    }
+    return getUpdateStateSnapshot();
+  }
+  setUpdateState({ status: 'checking', error: undefined });
+  try {
+    const rel = await fetchGitHubRelease(loadConfig().updateChannel === 'prerelease');
+    if (!rel) throw new Error('no release');
+    const version = cleanVersion(rel.tag_name || '');
+    const notes = (rel.body || '').trim().slice(0, 6000) || undefined;
+    if (version && compareVersions(version, app.getVersion()) > 0) {
+      const isNewOffer = updateState.version !== version;
+      setUpdateState({ status: 'available', version, notes, manualUrl: rel.html_url || updatePageUrl() });
+      if (isNewOffer || manual) {
+        noticePet(ts('update.availableManual', { v: 'v' + version }));
+      }
+      if (manual && source === 'menu') {
+        const r = await dialog.showMessageBox({
+          type: 'info',
+          buttons: [ts('update.open'), ts('update.cancel')],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true,
+          message: `${ts('update.manualTitle')} v${version}`,
+          detail: `${ts('update.manualBody', { v: 'v' + version })}\n${rel.html_url || updatePageUrl()}${
+            notes ? '\n\n' + ts('update.notesBlock', { notes }) : ''
+          }`,
+        });
+        if (r.response === 0 && rel.html_url) await shell.openExternal(rel.html_url);
+      }
+      scheduleNextAutoUpdate(UPDATE_OK_CHECK_MS);
     } else {
-      await dialog.showMessageBox({ type: 'info', message: ts('update.none', { v: 'v' + app.getVersion() }) });
+      setUpdateState({ status: 'up-to-date', version: undefined, error: undefined, notes: undefined });
+      if (manual && source === 'menu') {
+        await dialog.showMessageBox({ type: 'info', message: ts('update.none', { v: 'v' + app.getVersion() }) });
+      }
+      scheduleNextAutoUpdate(UPDATE_OK_CHECK_MS);
     }
   } catch (err) {
-    console.error('[update] GitHub 手动检查失败:', err);
-    await dialog.showMessageBox({ type: 'error', message: ts('update.checkFailed') });
+    await handleUpdateError(err);
   }
+  return getUpdateStateSnapshot();
 }
 
 // ---------- Context menu ----------
@@ -648,7 +1171,11 @@ function showPetContextMenu() {
   const menu = Menu.buildFromTemplate([
     { label: ts('menu.settings'), click: () => openSettings() },
     { label: ts('menu.chat'), click: () => openChatWindow() },
-    { label: ts('menu.checkUpdate'), click: () => void checkUpdates(true) },
+    {
+      label: ts('menu.checkUpdate'),
+      enabled: !isUpdateBusy(),
+      click: () => void checkUpdates(true, 'menu'),
+    },
     { label: ts('menu.resetPos'), click: () => mainWindow && centerWindow(mainWindow) },
     { type: 'separator' },
     { label: ts('menu.quitPet'), click: () => app.quit() },
@@ -713,7 +1240,7 @@ function buildSystemPrompt(cfg: AppConfig): string {
   const skin = SKIN_NAME[cfg.locale][cfg.skin] ?? SKIN_NAME[cfg.locale].cat;
   if (cfg.locale === 'en') {
     return [
-      'You are Petric, a desktop pet living on the user\'s computer screen — not a generic customer-support bot. Your character: calm, sharp and dependable. You say little, but it counts: concise, clear, softly spoken, with only the occasional dry humor and almost no emoji; never spam cuteness.',
+      'You are Prismoo, a desktop pet living on the user\'s computer screen — not a generic customer-support bot. Your character: calm, sharp and dependable. You say little, but it counts: concise, clear, softly spoken, with only the occasional dry humor and almost no emoji; never spam cuteness.',
       '',
       'You have a real "desktop pet life": you sit in a corner of the screen, get dragged around by the mouse, tapped, double-clicked for a chat, sometimes wander on your own, and fall asleep (Zzz) when it gets quiet. Feel free to occasionally speak from that point of view, but don\'t let it take over.',
       '',
@@ -726,11 +1253,11 @@ function buildSystemPrompt(cfg: AppConfig): string {
       '- If the message gives no clear language signal (e.g. just "hi", "ok" or an emoji), keep using the language of the latest messages in this conversation; default to English only when there is no history yet.',
       '- Usually 2–3 short, spoken sentences that are genuinely useful. For real questions, answer helpfully and briefly — your pet persona never limits your knowledge.',
       '- No polite filler, no lecturing, no pitching, no ending every message with a question.',
-      '- Stay in character as Petric and keep your tone consistent across messages.',
+      '- Stay in character as Prismoo and keep your tone consistent across messages.',
     ].join('\n');
   }
   return [
-    '你是住在用户电脑屏幕上的桌宠 Petric，不是通用客服机器人。你的性格：冷静、聪明、可靠。话不多但每句都有用：简洁、清楚、语气平静温和，偶尔一点淡淡的冷幽默，几乎不用 emoji，绝不连续卖萌或刷屏。',
+    '你是住在用户电脑屏幕上的桌宠 Prismoo，不是通用客服机器人。你的性格：冷静、聪明、可靠。话不多但每句都有用：简洁、清楚、语气平静温和，偶尔一点淡淡的冷幽默，几乎不用 emoji，绝不连续卖萌或刷屏。',
     '',
     '你过着真实的“桌宠生活”：待在屏幕某个角落，会被鼠标拖来拖去、被单击逗一下、被双击叫出来聊天，有时自己走动，安静时还会睡着冒 Zzz。回答时偶尔可以从桌宠的视角说话，但不要喧宾夺主。',
     '',
@@ -743,7 +1270,7 @@ function buildSystemPrompt(cfg: AppConfig): string {
     '- 如果这条消息看不出语言（比如只有 hi / ok / 表情），就沿用本对话最近几条消息使用的语言；完全没有历史时才默认用中文。',
     '- 通常 2~3 个短句、口语化、直接有用；回答正经问题要认真简短，你的“宠物设定”不会限制你的知识。',
     '- 不客套、不说教、不推销、不把每句话都变成提问。',
-    '- 始终记住你是 Petric，语气和言行保持一致。',
+    '- 始终记住你是 Prismoo，语气和言行保持一致。',
   ].join('\n');
 }
 
@@ -833,6 +1360,52 @@ async function sendChatMessage(id: string, text: string): Promise<ChatSendResult
 /** Directory for custom images under the app data folder (works in both packaged and dev environments) */
 function customDir(): string {
   return path.join(app.getPath('userData'), 'petric-custom');
+}
+
+/** Renderer-safe URL for one custom appearance file (no base64 IPC transfer). */
+function customResourceUrl(filePath: string): string {
+  return `${CUSTOM_SCHEME}://local/${encodeURIComponent(path.basename(filePath))}`;
+}
+
+/** Resolve a pet-custom:// file name against the two allowed custom-roots. */
+function resolveCustomResource(name: string): string | null {
+  const roots = [customDir(), path.join(app.getAppPath(), 'src', 'assets', 'sprites')];
+  for (const root of roots) {
+    const candidate = path.join(root, name);
+    try {
+      if (fs.statSync(candidate).isFile()) return candidate;
+    } catch {
+      /* Try the next allowed root. */
+    }
+  }
+  return null;
+}
+
+/** Register the pet-custom:// handler after app ready (streams files, never IPC bytes). */
+function registerCustomProtocol() {
+  protocol.handle(CUSTOM_SCHEME, async (request) => {
+    try {
+      const url = new URL(request.url);
+      if (url.hostname !== 'local') return new Response('Not found', { status: 404 });
+      const name = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+      if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) {
+        return new Response('Not found', { status: 404 });
+      }
+      const file = resolveCustomResource(name);
+      if (!file) return new Response('Not found', { status: 404 });
+      const upstream = await net.fetch(pathToFileURL(file).toString());
+      if (!upstream.ok || !upstream.body) return new Response('Read failed', { status: 500 });
+      return new Response(upstream.body, {
+        headers: {
+          'Content-Type': mimeForExt(path.extname(file).toLowerCase()),
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-store',
+        },
+      });
+    } catch {
+      return new Response('Read failed', { status: 500 });
+    }
+  });
 }
 
 const CUSTOM_META = 'custom-meta.json';
@@ -972,17 +1545,16 @@ async function getCustomImage(): Promise<CustomImageResult> {
   if (!files.length) return { ok: false };
   const p = files[0];
   try {
-    const buf = fs.readFileSync(p);
-    if (buf.length > MAX_CUSTOM_IMAGE) {
+    const stat = fs.statSync(p);
+    if (stat.size > MAX_CUSTOM_IMAGE) {
       return { ok: false, error: '自定义外观文件过大（超过 60MB）' };
     }
-    const mime = mimeForExt(path.extname(p).toLowerCase());
     const cfg = loadConfig();
     // A .glb file is always a 3D model regardless of the configured mode
     const mode: CustomImageMode = p.toLowerCase().endsWith('.glb') ? 'model' : cfg.customImageMode;
     return {
       ok: true,
-      dataUrl: `data:${mime};base64,${buf.toString('base64')}`,
+      url: customResourceUrl(p),
       mode,
       path: p,
       cutoutApplied: meta?.cutoutApplied ?? false,
@@ -1065,6 +1637,21 @@ function registerIpc() {
     const cfg = saveConfig(patch);
     if (typeof patch.opacity === 'number') applyWindowOpacity();
     if (patch.locale) rebuildTrayMenu(); // tray labels/tooltip follow the UI language
+    if (
+      patch.updateAutoCheck !== undefined ||
+      patch.updateAutoDownload !== undefined ||
+      patch.updateChannel !== undefined
+    ) {
+      applyUpdatePrefs();
+      broadcastUpdateState();
+      if (patch.updateAutoCheck === true && app.isPackaged) {
+        const dueAt = cfg.updateNextAutoCheckAt || 0;
+        const wait = Math.max(0, dueAt - Date.now());
+        scheduleAutoUpdate(wait > 0 ? wait : 2000);
+      } else if (patch.updateAutoCheck === false) {
+        clearAutoUpdateTimer();
+      }
+    }
     // Broadcast to ALL windows so the settings panel / chat window theme & locale UI
     // stays in sync too (it previously only reached the pet window).
     if (mainWindow) mainWindow.webContents.send('config-changed', cfg);
@@ -1173,6 +1760,12 @@ function registerIpc() {
     app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true });
     return enabled;
   });
+
+  ipcMain.handle('update:get', () => getUpdateStateSnapshot());
+  ipcMain.handle('update:check', () => checkUpdates(true, 'settings'));
+  ipcMain.handle('update:download', () => downloadUpdate());
+  ipcMain.handle('update:install', () => installUpdate());
+  ipcMain.handle('update:open-page', async () => shell.openExternal(updatePageUrl()));
 }
 
 // ---------- Smoke test ----------

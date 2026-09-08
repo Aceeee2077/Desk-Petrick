@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    name: Build & publish (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            dist-script: dist:win
+          - os: macos-latest
+            dist-script: dist:mac
+          - os: ubuntu-latest
+            dist-script: dist:linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and publish release assets
+        run: npm run ${{ matrix.dist-script }} -- --publish always
+        env:
+          # electron-builder uses this token to attach assets to the pushed tag.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional code-signing secrets. Without them the release is unsigned:
+          # Windows SmartScreen shows an "unknown publisher" warning and macOS users
+          # must right-click → Open (no auto-update installs until the app is signed).
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # No keychain identity is present on CI runners unless CSC_LINK is set.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
