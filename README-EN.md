@@ -1,4 +1,4 @@
-# 🐾 Prismoo · Cross-Platform Desktop Pet
+# 🐱 Prismoo · Cross-Platform Desktop Pet
 
 > **English** | [中文](./README.md)
 
