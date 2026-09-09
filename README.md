@@ -1,4 +1,4 @@
-# 🐾 Prismoo · 跨平台桌面宠物
+# 🐱 Prismoo · 跨平台桌面宠物
 
 > **中文** | [English](./README-EN.md)
 
