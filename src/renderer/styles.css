@@ -21,6 +21,12 @@
   --heart-on: #ff5c7a;
   --heart-off: #cfc8da;
   --scroll-thumb: rgba(255, 255, 255, 0.18);
+  /* One-click update badge */
+  --update-accent: #ff5c7a;
+  --update-ring: rgba(255, 92, 122, 0.5);
+  --update-ring-end: rgba(255, 92, 122, 0);
+  --update-done-bg: linear-gradient(160deg, #34d399, #10b981);
+  --update-error-bg: linear-gradient(160deg, #fbbf24, #f59e0b);
   /* Zzz particle base color (RGB triple, alpha applied per particle on the canvas) */
   --zzz: 122, 96, 178;
 }
@@ -35,6 +41,9 @@
   --heart-on: #ff7a3c;
   --heart-off: #e8d5c2;
   --scroll-thumb: rgba(249, 115, 22, 0.35);
+  --update-accent: #f97316;
+  --update-ring: rgba(249, 115, 22, 0.45);
+  --update-ring-end: rgba(249, 115, 22, 0);
   --zzz: 249, 115, 22;
 }
 
@@ -156,5 +165,104 @@ body {
 
 #affinity-badge .off {
   color: var(--heart-off);
+}
+
+/* ---------- One-click Update Badge (top-right) ---------- */
+/* Hidden during routine checks; only appears when there is an update to act on.
+   Clicking it drives the whole flow: download → auto-install → restart. */
+#update-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1.5px solid var(--badge-border);
+  border-radius: 50%;
+  background: var(--badge-bg);
+  color: var(--update-accent);
+  cursor: pointer;
+  z-index: 40;
+  opacity: 0;
+  transform: scale(0.55);
+  transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+#update-badge.show {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+#update-badge .glyph {
+  position: relative;
+  z-index: 2;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+#update-badge .ring {
+  display: none;
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+#update-badge[data-state='available'],
+#update-badge[data-state='downloaded'] {
+  animation: update-pulse 2.2s ease-out infinite;
+}
+
+#update-badge[data-state='downloaded'] {
+  background: var(--update-done-bg);
+  color: #fff;
+  border-color: transparent;
+}
+
+#update-badge[data-state='error'] {
+  background: var(--update-error-bg);
+  color: #fff;
+  border-color: transparent;
+}
+
+/* Downloading: a conic progress ring with the percentage in the middle */
+#update-badge[data-state='downloading'] {
+  background: conic-gradient(
+    var(--update-accent) calc(var(--p, 0) * 1%),
+    var(--badge-border) 0
+  );
+  border-color: transparent;
+}
+
+#update-badge[data-state='downloading']::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--bubble-tail);
+}
+
+#update-badge[data-state='downloading'] .glyph {
+  font-size: 9px;
+  color: var(--bubble-text);
+}
+
+@keyframes update-pulse {
+  0% {
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2), 0 0 0 0 var(--update-ring);
+  }
+  70% {
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2), 0 0 0 9px var(--update-ring-end);
+  }
+  100% {
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2), 0 0 0 0 var(--update-ring-end);
+  }
 }
 

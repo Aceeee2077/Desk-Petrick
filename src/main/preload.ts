@@ -26,6 +26,7 @@ const api: PetApi = {
   updateCheck: () => ipcRenderer.invoke('update:check'),
   updateDownload: () => ipcRenderer.invoke('update:download'),
   updateInstall: () => ipcRenderer.invoke('update:install'),
+  updateInstallWhenReady: () => ipcRenderer.invoke('update:install-when-ready'),
   updateOpenPage: () => ipcRenderer.invoke('update:open-page'),
   onConfigChanged: (cb) => {
     const listener = (_e: Electron.IpcRendererEvent, cfg: AppConfig) => cb(cfg);

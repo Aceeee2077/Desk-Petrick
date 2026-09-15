@@ -8,7 +8,7 @@
 //   node scripts/set-custom.mjs --clear          # clear the custom appearance and restore the default cat
 //
 // Features:
-//   1) Copy the file into the app data directory userData/petric-custom/custom.<ext>
+//   1) Copy the file into the app data directory userData/custom/custom.<ext>
 //      (works for both packaged and dev builds)
 //   2) Copy a copy to src/assets/sprites/custom.<ext> (repo copy for direct dev use)
 //   3) Write userData/config.json and set skin to custom
@@ -29,12 +29,12 @@ const MODES = ['single', 'sheet', 'model', 'billboard'];
 
 function userDataDir() {
   if (process.platform === 'darwin') {
-    return join(os.homedir(), 'Library', 'Application Support', 'petric');
+    return join(os.homedir(), 'Library', 'Application Support', 'prismoo');
   }
   if (process.platform === 'win32') {
-    return join(process.env.APPDATA || '', 'petric');
+    return join(process.env.APPDATA || '', 'prismoo');
   }
-  return join(process.env.XDG_CONFIG_HOME || join(os.homedir(), '.config'), 'petric');
+  return join(process.env.XDG_CONFIG_HOME || join(os.homedir(), '.config'), 'prismoo');
 }
 
 function readConfig(cfgPath) {
@@ -49,7 +49,7 @@ const args = process.argv.slice(2);
 
 // ---------- Clear ----------
 if (args.includes('--clear')) {
-  const dir = join(userDataDir(), 'petric-custom');
+  const dir = join(userDataDir(), 'custom');
   for (const ext of ALLOWED) {
     const p = join(dir, 'custom' + ext);
     if (existsSync(p)) {
@@ -97,7 +97,7 @@ if (!MODES.includes(finalMode)) {
 }
 
 // 1) App data directory (primary location, also works after packaging)
-const customDir = join(userDataDir(), 'petric-custom');
+const customDir = join(userDataDir(), 'custom');
 mkdirSync(customDir, { recursive: true });
 const dst = join(customDir, 'custom' + ext);
 copyFileSync(src, dst);

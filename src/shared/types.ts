@@ -302,6 +302,8 @@ interface PetApi {
   updateDownload(): Promise<UpdateState>;
   /** Restart the app and install an already-downloaded update */
   updateInstall(): Promise<void>;
+  /** One-click update: download if needed, then restart & install automatically when ready */
+  updateInstallWhenReady(): Promise<UpdateState>;
   /** Open the GitHub Releases page in the default browser */
   updateOpenPage(): Promise<void>;
   /** Subscribe to config changes, returns an unsubscribe function */

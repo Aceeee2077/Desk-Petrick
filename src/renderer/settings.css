@@ -33,6 +33,9 @@
   --tag-text: #c9b8ff;
   --btn-close: #b9aee0;
   --scroll-thumb: rgba(255, 255, 255, 0.18);
+  /* One-click update badge in the header */
+  --update-ring: rgba(167, 139, 250, 0.5);
+  --update-ring-end: rgba(167, 139, 250, 0);
 }
 
 :root[data-theme='light'] {
@@ -57,6 +60,8 @@
   --tag-text: #c2410c;
   --btn-close: #b45309;
   --scroll-thumb: rgba(249, 115, 22, 0.35);
+  --update-ring: rgba(249, 115, 22, 0.45);
+  --update-ring-end: rgba(249, 115, 22, 0);
 }
 
 html,
@@ -119,6 +124,76 @@ header .title {
 
 header .no-drag {
   -webkit-app-region: no-drag;
+}
+
+.head-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ---------- One-click Update Badge (settings header) ---------- */
+/* Hidden unless there is an update to act on; one click downloads + installs it. */
+#header-update {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  max-width: 240px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  animation: header-update-pulse 2.2s ease-out infinite;
+}
+
+#header-update:hover {
+  filter: brightness(1.08);
+}
+
+#header-update[data-state='downloading'] {
+  animation: none;
+}
+
+#header-update[data-state='downloaded'] {
+  background: #10b981;
+  animation: header-update-pulse 2.2s ease-out infinite;
+}
+
+#header-update[data-state='error'] {
+  background: #f59e0b;
+  animation: none;
+}
+
+#header-update .dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.22);
+}
+
+@keyframes header-update-pulse {
+  0% {
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18), 0 0 0 0 var(--update-ring);
+  }
+  70% {
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18), 0 0 0 8px var(--update-ring-end);
+  }
+  100% {
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18), 0 0 0 0 var(--update-ring-end);
+  }
 }
 
 #btn-close {

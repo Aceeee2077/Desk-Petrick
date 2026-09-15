@@ -222,7 +222,7 @@ the chat window share the same history in real time.
 
 **Way 1: In-app (recommended, works in packaged builds too)**
 Settings → Pet type → "🖼️ Custom" → "Choose File…" → pick an image or a `.glb` model, applied instantly.
-The file is stored in `userData/petric-custom/`; use "Clear Custom Appearance" to restore.
+The file is stored in `userData/custom/`; use "Clear Custom Appearance" to restore.
 
 **Way 2: Command line (handy in dev)**
 ```bash
@@ -272,6 +272,20 @@ In `scripts/generate-sprites.mjs`:
 2. Add a `kind` branch in `drawPet()` (ears / tail / snout shapes);
 3. Register the skin in the renderer: `loadSheets()` in `src/renderer/app.ts` and the `#skin-seg` buttons in `src/renderer/settings.ts`;
 4. Run `npm run sprites`.
+
+**Option C: build a pet from one transparent image**
+If you only have a single still (photo or artwork), let the script trim, resize and bake the
+four animation states into a 4×4 sheet:
+
+```bash
+node scripts/prepare-single-pet.mjs your-cat.png src/assets/animated-pets/bulu.png --cell 192
+```
+
+The input needs a transparent background (cut it out in-app or with `npm run set-custom`
+first). The script emits 16 frames ordered idle / walking / sleeping / click.
+`--cell` sets the per-frame pixel density (default 128): 64px frames keep the 2x
+nearest-neighbour pixel-art upscale, while frames of 128px and up are blitted 1:1 with no
+resampling — so more detail survives and the pet is both larger and sharper.
 
 The illustrated animal sheets contain their complete faces. Robot eyes/blinks and the Zzz
 particles are overlaid by the renderer.
@@ -327,6 +341,7 @@ petric/
 ├── scripts/
 │   ├── generate-sprites.mjs   # Pixel sprite & icon generator (zero-dependency PNG encoder)
 │   ├── prepare-animated-pet.mjs # Cleans, slices and normalizes 4×4 animation art
+│   ├── prepare-single-pet.mjs  # One transparent image → 4×4 four-state pet sheet
 │   ├── copy-vendor.mjs        # Copies the three.js UMD build from node_modules into vendor/
 │   ├── make-test-model.mjs    # Generates the test 3D model (GLB)
 │   ├── copy-assets.mjs        # Copies html/css/assets into dist/ on build

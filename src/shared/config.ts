@@ -70,7 +70,7 @@ function encryptForDisk(plain: string): string {
   try {
     return API_KEY_PREFIX + safeStorage.encryptString(plain).toString('base64');
   } catch (err) {
-    console.error('[Prismoo] API Key 加密失败，将按明文保存:', err);
+    console.error('[Prismoo] API key encryption failed, storing it as plain text:', err);
     return plain;
   }
 }
@@ -78,13 +78,13 @@ function encryptForDisk(plain: string): string {
 function decryptFromDisk(stored: string): string {
   if (!stored.startsWith(API_KEY_PREFIX)) return stored; // legacy plaintext
   if (!encryptionAvailable()) {
-    console.warn('[Prismoo] 系统安全存储不可用，无法解密已保存的 API Key');
+    console.warn('[Prismoo] OS secure storage unavailable, cannot decrypt the saved API key');
     return '';
   }
   try {
     return safeStorage.decryptString(Buffer.from(stored.slice(API_KEY_PREFIX.length), 'base64'));
   } catch (err) {
-    console.error('[Prismoo] API Key 解密失败，已忽略存储的密钥:', err);
+    console.error('[Prismoo] API key decryption failed, ignoring the stored key:', err);
     return '';
   }
 }
@@ -111,7 +111,7 @@ function writeConfigFile(cfg: AppConfig) {
       try { fs.unlinkSync(tmp); } catch { /* ignore */ }
     }
   } catch (err) {
-    console.error('[Prismoo] 保存配置失败:', err);
+    console.error('[Prismoo] saving the config failed:', err);
     try { fs.unlinkSync(tmp); } catch { /* ignore */ }
   }
 }
