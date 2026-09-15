@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions used by the Prismoo pet, settings and chat windows.",
+  "windows": ["pet", "settings", "chat"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-ignore-cursor-events",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-always-on-top",
+    "dialog:default",
+    "opener:default"
+  ]
+}

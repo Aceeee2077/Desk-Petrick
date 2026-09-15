@@ -1,0 +1,6 @@
+# Rust build output and generated Tauri schemas
+/target/
+/gen/
+
+# Machine-local cargo mirror configuration (see .cargo/config.toml)
+/.cargo/
