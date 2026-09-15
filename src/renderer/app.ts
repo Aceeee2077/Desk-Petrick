@@ -1580,6 +1580,14 @@ async function onUpdateBadgeClick(e: MouseEvent) {
   }
 }
 
+// Expose the combined hit test (pet pixels + update badge) so the Tauri shim can
+// restore interactivity when the cursor re-enters: unlike Electron, a click-through
+// Tauri window stops receiving mousemove, so re-entry cannot be detected from events.
+(window as unknown as { __prismooHitTest?: (x: number, y: number) => boolean }).__prismooHitTest = (
+  x,
+  y,
+) => isOverUpdateBadge(x, y) || isOverPet(x, y);
+
 // ---------- Sound (Web Audio synthesis, a short "meow") ----------
 let audioCtx: AudioContext | null = null;
 

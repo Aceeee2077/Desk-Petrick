@@ -119,6 +119,30 @@ pub fn set_click_through(window: WebviewWindow, enabled: bool) -> Result<(), Str
         .map_err(|e| e.to_string())
 }
 
+/// Cursor position in window-local CSS pixels, or None when it is outside the window.
+///
+/// Electron forwarded mousemove events to a click-through window; Tauri does not, so
+/// once the pet becomes click-through nothing in the renderer can notice the cursor
+/// coming back. The renderer polls this instead and re-enables interaction itself.
+#[tauri::command]
+pub fn cursor_in_window(window: WebviewWindow) -> Result<Option<(f64, f64)>, String> {
+    let cursor = window.cursor_position().map_err(|e| e.to_string())?;
+    let position = window.outer_position().map_err(|e| e.to_string())?;
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+
+    let x = (cursor.x - position.x as f64) / scale;
+    let y = (cursor.y - position.y as f64) / scale;
+    let width = size.width as f64 / scale;
+    let height = size.height as f64 / scale;
+
+    if x < 0.0 || y < 0.0 || x >= width || y >= height {
+        Ok(None)
+    } else {
+        Ok(Some((x, y)))
+    }
+}
+
 #[tauri::command]
 pub fn config_get(state: State<'_, ConfigState>) -> Value {
     state.snapshot()

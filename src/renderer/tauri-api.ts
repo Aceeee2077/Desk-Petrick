@@ -96,6 +96,55 @@
     tick();
   }
 
+  // ---------- Click-through re-entry ----------
+  // Electron forwarded mousemove to a click-through window; Tauri does not, so once the
+  // pet is click-through nothing in the renderer can notice the cursor coming back.
+  // While click-through is on we poll the cursor and flip interaction back on as soon as
+  // it re-enters the pet (or the update badge).
+  let reentryTimer: number | null = null;
+  let reentryFailures = 0;
+
+  function stopReentryPoll(): void {
+    if (reentryTimer !== null) {
+      window.clearInterval(reentryTimer);
+      reentryTimer = null;
+    }
+    reentryFailures = 0;
+  }
+
+  function startReentryPoll(): void {
+    if (reentryTimer !== null) return;
+    reentryTimer = window.setInterval(() => {
+      const hitTest = (window as unknown as { __prismooHitTest?: (x: number, y: number) => boolean })
+        .__prismooHitTest;
+      if (!hitTest) return;
+      void call<[number, number] | null>('cursor_in_window')
+        .then((point) => {
+          reentryFailures = 0;
+          if (!point) return;
+          if (hitTest(point[0], point[1])) {
+            stopReentryPoll();
+            send('set_click_through', { enabled: false });
+          }
+        })
+        .catch(() => {
+          // Fail safe: if polling breaks, give the pet its clicks back rather than
+          // leaving the window permanently untouchable.
+          reentryFailures += 1;
+          if (reentryFailures >= 5) {
+            stopReentryPoll();
+            send('set_click_through', { enabled: false });
+          }
+        });
+    }, 50);
+  }
+
+  function setClickThrough(enabled: boolean): void {
+    send('set_click_through', { enabled });
+    if (enabled) startReentryPoll();
+    else stopReentryPoll();
+  }
+
   // ---------- Not ported yet (graceful defaults) ----------
   const updateDevState = (): UpdateState => ({
     status: 'dev',
@@ -116,7 +165,7 @@
     dragEnd: () => send('drag_end'),
     getWindowPosition: () => call<number[]>('window_position'),
     resetPosition: () => send('window_center_here'),
-    setClickThrough: (enabled) => send('set_click_through', { enabled }),
+    setClickThrough,
     centerHere: () => send('window_center_here'),
 
     // ---- Config ----
@@ -186,4 +235,12 @@
   };
 
   window.api = api;
+
+  // The pet window starts click-through, matching the Electron build (transparent
+  // areas never swallow desktop clicks). The re-entry poll above brings interaction
+  // back as soon as the cursor touches the pet — it waits for app.js to publish
+  // __prismooHitTest, so running before the renderer is safe.
+  if (location.pathname.endsWith('index.html')) {
+    setClickThrough(true);
+  }
 })();

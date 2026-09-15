@@ -55,7 +55,9 @@ child.on('exit', (code) => {
     report.hasCanvas &&
     report.i18nKeys > 0 &&
     typeof report.skin === 'string' &&
-    report.drawnPixels > 0;
+    report.drawnPixels > 0 &&
+    report.hitTestOverPet === true &&
+    report.hitTestCorner === false;
   if (!ok) {
     console.error('✗ 自检未通过（见上面的报告）');
     process.exit(1);

@@ -27,6 +27,10 @@ const SELF_CHECK_JS: &str = r#"
     const i18n = await window.api.getI18n();
     out.locale = i18n.locale;
     out.i18nKeys = Object.keys(i18n.dict || {}).length;
+    out.hitTestOverPet = window.__prismooHitTest ? window.__prismooHitTest(150, 240) : null;
+    out.hitTestCorner = window.__prismooHitTest ? window.__prismooHitTest(5, 5) : null;
+    const cursor = await window.__TAURI__.core.invoke('cursor_in_window');
+    out.cursorInWindow = Array.isArray(cursor) ? 'inside' : 'outside';
   } catch (err) {
     out.apiError = String(err);
   }
@@ -88,6 +92,7 @@ pub fn run() {
             window::drag_move,
             window::drag_end,
             window::set_click_through,
+            window::cursor_in_window,
             window::config_get,
             window::config_set,
             window::quit_app,
