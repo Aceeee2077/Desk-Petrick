@@ -14,6 +14,7 @@
     "build": "npm run sprites && npm run brand-icons && npm run vendor && npm run models && tsc && node scripts/copy-assets.mjs && npm run tauri:resources",
     "tauri:resources": "node scripts/build-tauri-resources.mjs",
     "tauri:build": "cargo build --manifest-path src-tauri/Cargo.toml",
+    "tauri:build:release": "cargo build --release --manifest-path src-tauri/Cargo.toml",
     "tauri:check": "npm run tauri:build && node scripts/run-tauri-check.mjs",
     "dev": "npm run build && node scripts/run-electron.mjs .",
     "start": "node scripts/run-electron.mjs .",
