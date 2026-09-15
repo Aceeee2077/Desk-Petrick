@@ -34,10 +34,10 @@ child.stderr.on('data', (chunk) => {
 });
 
 const timer = setTimeout(() => {
-  console.error('✗ 自检超时（60 秒内没有完成两阶段检查）');
+  console.error('✗ 自检超时（90 秒内没有完成三阶段检查）');
   child.kill();
   process.exit(1);
-}, 60_000);
+}, 90_000);
 
 child.on('exit', (code) => {
   clearTimeout(timer);
@@ -53,6 +53,7 @@ child.on('exit', (code) => {
 
   const pet = reports.find((r) => r.window === 'pet');
   const settings = reports.find((r) => r.window === 'settings');
+  const chat = reports.find((r) => r.window === 'chat');
 
   const petOk =
     pet &&
@@ -64,6 +65,15 @@ child.on('exit', (code) => {
     pet.hitTestOverPet === true &&
     pet.hitTestCorner === false;
   const settingsOk = settings && settings.hasApi && settings.hasPanel && settings.configRoundTrip;
+  const chatOk =
+    chat &&
+    chat.hasApi &&
+    chat.hasList &&
+    chat.created &&
+    chat.renamed &&
+    chat.archived &&
+    chat.deleted &&
+    chat.countRestored;
 
   if (!petOk) {
     console.error('✗ 宠物窗口自检未通过');
@@ -73,6 +83,10 @@ child.on('exit', (code) => {
     console.error('✗ 设置窗口自检未通过');
     process.exit(1);
   }
-  console.log('✓ Tauri 版自检通过：宠物窗口渲染正常，设置窗口加载正常，配置可双向读写');
+  if (!chatOk) {
+    console.error('✗ 聊天窗口自检未通过');
+    process.exit(1);
+  }
+  console.log('✓ Tauri 版自检通过：宠物渲染、设置读写、聊天会话增删改查全部正常');
   process.exit(code === 0 ? 0 : 1);
 });

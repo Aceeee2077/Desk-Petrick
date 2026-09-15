@@ -154,8 +154,6 @@
     channel: 'stable',
   });
 
-  const emptyChatState = (): ChatState => ({ conversations: [], activeId: '' });
-
   const api: PetApi = {
     // ---- Window ----
     moveWindow: (dx, dy) => send('window_move', { dx: Math.round(dx), dy: Math.round(dy) }),
@@ -177,17 +175,16 @@
     openSettings: () => send('open_settings'),
     quitApp: () => send('quit_app'),
     showContextMenu: () => send('show_pet_menu'),
-    openChat: () => console.warn('[tauri-api] openChat is not ported yet'),
-    closeChatWindow: () => window.close(),
+    openChat: () => send('open_chat'),
+    closeChatWindow: () => send('close_chat'),
 
     // ---- Autonomous movement ----
     autoMoveStart,
     autoMoveStop,
     autoJump: (height, duration) => void autoJump(height, duration),
 
-    // ---- AI chat (needs the Rust HTTP client) ----
-    aiChat: () =>
-      Promise.reject(new Error('AI chat is not ported to the Tauri build yet')), 
+    // ---- AI chat (request runs in Rust so the API key stays out of the page) ----
+    aiChat: (messages) => call<string>('ai_chat', { messages }),
 
     // ---- Auto launch ----
     autoLaunchGet: () => Promise.resolve(false),
@@ -202,22 +199,15 @@
     updateOpenPage: () => Promise.resolve(),
     onUpdateState: (cb) => subscribe<UpdateState>('update-state', cb),
 
-    // ---- Chat store (Rust port pending) ----
-    chatsGetState: () => Promise.resolve(emptyChatState()),
-    chatsCreate: () =>
-      Promise.resolve({
-        id: '',
-        title: '',
-        messages: [],
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      }),
-    chatsDelete: () => Promise.resolve(),
-    chatsArchive: () => Promise.resolve(),
-    chatsRename: () => Promise.resolve(),
-    setActiveChat: () => undefined,
-    chatsSend: () => Promise.resolve({ ok: false, error: 'chat store not ported yet' }),
-    chatsImportLegacy: () => Promise.resolve(false),
+    // ---- Chat store ----
+    chatsGetState: () => call<ChatState>('chats_state'),
+    chatsCreate: () => call<ChatConversation>('chats_create'),
+    chatsDelete: (id) => call<void>('chats_delete', { id }),
+    chatsArchive: (id) => call<void>('chats_archive', { id }),
+    chatsRename: (id, title) => call<void>('chats_rename', { id, title }),
+    setActiveChat: (id) => send('chats_set_active', { id }),
+    chatsSend: (id, text) => call<ChatSendResult>('chats_send', { id, text }),
+    chatsImportLegacy: (payload) => call<boolean>('chats_import_legacy', { payload }),
     onChatsChanged: (cb) => subscribe<ChatState>('chats-changed', cb),
     onChatReward: (cb) => subscribe<void>('pet:chat-reward', () => cb()),
     onPetNotice: (cb) => subscribe<string>('pet:notice', cb),

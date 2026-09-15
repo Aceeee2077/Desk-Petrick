@@ -29,6 +29,15 @@ pub fn translate(locale: &str, key: &str) -> String {
         .to_string()
 }
 
+/// Same as `translate`, with `{name}` placeholders substituted.
+pub fn translate_params(locale: &str, key: &str, params: &[(&str, String)]) -> String {
+    let mut text = translate(locale, key);
+    for (name, value) in params {
+        text = text.replace(&format!("{{{name}}}"), value);
+    }
+    text
+}
+
 #[tauri::command]
 pub fn i18n_get(state: State<'_, ConfigState>) -> Value {
     let dictionaries = dictionaries();

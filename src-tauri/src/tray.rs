@@ -27,8 +27,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let locale = current_locale(app);
     let label = |key: &str| translate(&locale, key);
 
-    // Not ported yet -> present but disabled (chat store / updater land later).
-    let chat = MenuItem::with_id(app, "chat", label("menu.chat"), false, None::<&str>)?;
+    let chat = MenuItem::with_id(app, "chat", label("menu.chat"), true, None::<&str>)?;
+    // Not ported yet -> present but disabled (the updater lands later).
     let update = MenuItem::with_id(app, "update", label("menu.checkUpdate"), false, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", label("menu.settings"), true, None::<&str>)?;
     let reset = MenuItem::with_id(app, "reset", label("menu.resetPos"), true, None::<&str>)?;
@@ -40,6 +40,9 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 
 fn handle_menu(app: &AppHandle, id: &str) {
     match id {
+        "chat" => {
+            let _ = crate::window::open_chat(app.clone());
+        }
         "settings" => {
             let _ = crate::window::open_settings(app.clone());
         }

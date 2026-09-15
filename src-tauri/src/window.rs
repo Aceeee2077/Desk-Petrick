@@ -201,6 +201,35 @@ pub fn open_settings(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Open (or focus) the standalone chat window.
+#[tauri::command]
+pub fn open_chat(app: AppHandle) -> Result<(), String> {
+    if let Some(existing) = app.get_webview_window("chat") {
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        "chat",
+        tauri::WebviewUrl::App("renderer/chat.html".into()),
+    )
+    .title("Prismoo")
+    .inner_size(900.0, 720.0)
+    .min_inner_size(720.0, 560.0)
+    .center()
+    .build()
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn close_chat(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("chat") {
+        let _ = window.close();
+    }
+}
+
 /// Set the pet window's opacity (0.5 - 1.0).
 #[tauri::command]
 pub fn set_window_opacity(app: AppHandle, opacity: f64) -> Result<(), String> {
