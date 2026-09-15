@@ -8,13 +8,30 @@
 
 use crate::config::ConfigState;
 use serde_json::{json, Value};
+use std::sync::OnceLock;
 use tauri::State;
 
 const I18N_JSON: &str = include_str!("../resources/i18n.json");
 
+/// Parsed once — the dictionaries are static data compiled into the binary.
+fn dictionaries() -> &'static Value {
+    static DICTS: OnceLock<Value> = OnceLock::new();
+    DICTS.get_or_init(|| serde_json::from_str(I18N_JSON).unwrap_or_else(|_| json!({})))
+}
+
+/// Look up one string for the given locale (used by the tray and native dialogs).
+pub fn translate(locale: &str, key: &str) -> String {
+    dictionaries()
+        .get(locale)
+        .and_then(|dict| dict.get(key))
+        .and_then(|value| value.as_str())
+        .unwrap_or(key)
+        .to_string()
+}
+
 #[tauri::command]
 pub fn i18n_get(state: State<'_, ConfigState>) -> Value {
-    let dictionaries: Value = serde_json::from_str(I18N_JSON).unwrap_or_else(|_| json!({}));
+    let dictionaries = dictionaries();
     let locale = state
         .get("locale")
         .as_str()

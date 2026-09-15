@@ -79,6 +79,13 @@ pub fn window_center_here(window: WebviewWindow) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Center the pet window on its current monitor (used by the tray / context menu).
+pub fn center_pet(app: &AppHandle) {
+    if let Some(pet) = app.get_webview_window("pet") {
+        let _ = window_center_here(pet);
+    }
+}
+
 #[tauri::command]
 pub fn drag_begin(window: WebviewWindow, state: State<'_, DragState>) -> Result<(), String> {
     let position = window.outer_position().map_err(|e| e.to_string())?;
@@ -150,9 +157,20 @@ pub fn config_get(state: State<'_, ConfigState>) -> Value {
 
 #[tauri::command]
 pub fn config_set(app: AppHandle, state: State<'_, ConfigState>, patch: Value) -> Value {
+    let locale_before = state
+        .get("locale")
+        .as_str()
+        .unwrap_or("zh")
+        .to_string();
     let merged = state.apply(&patch);
     state.persist();
     let _ = app.emit("config-changed", merged.clone());
+
+    // The tray labels / tooltip are localized, so a language switch re-labels them.
+    let locale_after = state.get("locale").as_str().unwrap_or("zh").to_string();
+    if locale_before != locale_after {
+        let _ = crate::tray::rebuild(&app);
+    }
     merged
 }
 

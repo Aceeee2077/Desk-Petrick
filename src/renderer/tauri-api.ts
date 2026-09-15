@@ -176,7 +176,7 @@
     // ---- Shell ----
     openSettings: () => send('open_settings'),
     quitApp: () => send('quit_app'),
-    showContextMenu: () => console.warn('[tauri-api] showContextMenu is not ported yet'),
+    showContextMenu: () => send('show_pet_menu'),
     openChat: () => console.warn('[tauri-api] openChat is not ported yet'),
     closeChatWindow: () => window.close(),
 
