@@ -21,6 +21,10 @@
 const canvas = document.getElementById('pet-canvas') as HTMLCanvasElement;
 const bubbleEl = document.getElementById('bubble') as HTMLDivElement;
 const affinityBadgeEl = document.getElementById('affinity-badge') as HTMLDivElement;
+const updateBadgeEl = document.getElementById('update-badge') as HTMLButtonElement | null;
+
+/** Latest update snapshot pushed by the main process (drives the one-click update badge). */
+let updateBadgeState: UpdateState | null = null;
 
 const ctx = canvas.getContext('2d')!;
 
@@ -533,7 +537,8 @@ function ensureHitMap(force: boolean) {
 function isOverPet(clientX: number, clientY: number, forceHitMap = false): boolean {
   if (pet3dActive && pet3d) return pet3d.isOver(clientX, clientY);
   // Coarse bounding-box early-out: the pet never reaches the far corners of the window.
-  if (clientX < 70 || clientX > 230 || clientY < 90) return false;
+  // Sized for the largest illustrated sheet (a 192px stage, centred) with margin.
+  if (clientX < 36 || clientX > 264 || clientY < 88) return false;
   ensureHitMap(forceHitMap);
   if (!hitAlpha || !hitCanvas) return false;
   const hx = Math.floor(clientX / HIT_SCALE);
@@ -1012,7 +1017,13 @@ function drawBuiltInPet() {
     const illustrated = isIllustratedPet(config.skin);
     const frameW = illustrated ? Math.round(img.naturalWidth / SHEET.cols) : SHEET.frameW;
     const frameH = illustrated ? Math.round(img.naturalHeight / SHEET.rows) : SHEET.frameH;
-    const scale = illustrated ? 2 : SHEET.scale;
+    // Illustrated sheets are authored at different resolutions: a 256x256 sheet has
+    // 64px cells, a 512x512 one has 128px cells. Scale so every illustrated pet
+    // occupies the same 128x128 box on screen, preferring a 1:1 blit for high-res
+    // sheets (no resampling => crisp art instead of an upscaled blur).
+    const ILLUSTRATED_MAX_PX = 256;
+    let scale = illustrated ? (frameW <= 64 ? 2 : 1) : SHEET.scale;
+    if (illustrated && frameW * scale > ILLUSTRATED_MAX_PX) scale = ILLUSTRATED_MAX_PX / frameW;
     const dw = frameW * scale;
     const dh = frameH * scale;
     const dx = 150 - dw / 2;
@@ -1020,7 +1031,9 @@ function drawBuiltInPet() {
     // Idle frames of stabilised illustrated pets cycle over a subset of source columns
     const sx = (state === 'idle' ? currentIdleSourceColumn() : frameIndex) * frameW;
     const sy = meta.row * frameH;
-    ctx.imageSmoothingEnabled = false; // keep the pixel art sharp
+    // Pixel art (64px cells) stays nearest-neighbour; high-res illustrated sheets are
+    // drawn 1:1, and smoothing only matters if a non-integer scale is ever used.
+    ctx.imageSmoothingEnabled = illustrated ? frameW * scale !== Math.round(frameW * scale) : false;
     ctx.save();
     // Mirror the illustrated sheet so the pet always faces its movement direction.
     // Sheets that natively face LEFT (e.g. bulu) mirror when moving RIGHT instead.
@@ -1468,6 +1481,105 @@ function hideBubble() {
   bubbleEl.classList.remove('show');
 }
 
+// ---------- One-click Update Badge ----------
+/**
+ * Mirrors the main-process UpdateState onto the small top-right button. It stays
+ * hidden during routine checks (idle / up-to-date / dev) and only appears when there is
+ * something to act on, so it reads as a real "there's an update" signal rather than noise.
+ * A single click runs the whole flow: download → auto-install → restart.
+ */
+function isOverUpdateBadge(clientX: number, clientY: number): boolean {
+  if (!updateBadgeEl || updateBadgeEl.hidden || !updateBadgeEl.classList.contains('show')) return false;
+  const r = updateBadgeEl.getBoundingClientRect();
+  return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+}
+
+function renderUpdateBadge(s: UpdateState) {
+  updateBadgeState = s;
+  if (!updateBadgeEl) return;
+  const t = window.PetricI18n.t;
+  const offered = s.version ? s.version.replace(/^v/i, '') : '';
+  const pct = Math.min(100, Math.max(0, Math.round(s.progress?.percent ?? 0)));
+
+  const visible =
+    s.status === 'available' ||
+    s.status === 'downloading' ||
+    s.status === 'downloaded' ||
+    (s.status === 'error' && !!s.version);
+
+  if (!visible) {
+    updateBadgeEl.classList.remove('show');
+    // Let the fade-out play before removing it from the hit-test path.
+    window.setTimeout(() => {
+      if (updateBadgeEl && !updateBadgeEl.classList.contains('show')) updateBadgeEl.hidden = true;
+    }, 220);
+    return;
+  }
+
+  const glyph = updateBadgeEl.querySelector('.glyph') as HTMLElement | null;
+  let title = t('updateBadge.label');
+
+  switch (s.status) {
+    case 'available':
+      updateBadgeEl.dataset.state = 'available';
+      if (glyph) glyph.textContent = s.manualUrl ? '↗' : '⬇';
+      title = s.manualUrl
+        ? t('updateBadge.manual', { v: offered })
+        : t('updateBadge.available', { v: offered });
+      break;
+    case 'downloading':
+      updateBadgeEl.dataset.state = 'downloading';
+      updateBadgeEl.style.setProperty('--p', String(pct));
+      if (glyph) glyph.textContent = String(pct);
+      title = t('updateBadge.downloading', { p: pct });
+      break;
+    case 'downloaded':
+      updateBadgeEl.dataset.state = 'downloaded';
+      if (glyph) glyph.textContent = '↻';
+      title = t('updateBadge.downloaded', { v: offered });
+      break;
+    default:
+      updateBadgeEl.dataset.state = 'error';
+      if (glyph) glyph.textContent = '!';
+      title = t('updateBadge.error');
+  }
+
+  updateBadgeEl.title = title;
+  updateBadgeEl.setAttribute('aria-label', title);
+  updateBadgeEl.hidden = false;
+  if (!updateBadgeEl.classList.contains('show')) {
+    requestAnimationFrame(() => updateBadgeEl?.classList.add('show'));
+  }
+}
+
+async function onUpdateBadgeClick(e: MouseEvent) {
+  e.preventDefault();
+  e.stopPropagation();
+  const s = updateBadgeState;
+  if (!s) return;
+  if (s.status === 'downloaded') {
+    await window.api.updateInstall();
+    return;
+  }
+  if (s.status === 'error') {
+    renderUpdateBadge(await window.api.updateCheck());
+    return;
+  }
+  if (s.manualUrl) {
+    await window.api.updateOpenPage();
+    return;
+  }
+  if (s.status === 'available' || s.status === 'downloading') {
+    // Tell the main process to install without the extra "restart & update?" dialog...
+    renderUpdateBadge(await window.api.updateInstallWhenReady());
+    // ...and, when auto-download is off, kick off the download ourselves.
+    if (s.status === 'available' && !s.autoDownload) {
+      renderUpdateBadge(await window.api.updateDownload());
+    }
+    showBubble(window.PetricI18n.t('updateBadge.queued'), { ms: 3000 });
+  }
+}
+
 // ---------- Sound (Web Audio synthesis, a short "meow") ----------
 let audioCtx: AudioContext | null = null;
 
@@ -1556,7 +1668,10 @@ function onMouseMove(e: MouseEvent) {
   // otherwise keep the pet awake forever. Only pet pixels / real drags count.
   const interactive = dragging || dragCandidate;
   if (!interactive) {
-    const over = isOverPet(e.clientX, e.clientY);
+    // The update badge sits outside the pet's opaque pixels, so it needs its own hit
+    // test — otherwise the click-through window would swallow its clicks.
+    const overBadge = isOverUpdateBadge(e.clientX, e.clientY);
+    const over = overBadge || isOverPet(e.clientX, e.clientY);
     if (over !== overPet) {
       overPet = over;
       window.api.setClickThrough(!over);
@@ -1767,6 +1882,7 @@ async function applyLocaleTexts() {
   const payload = await window.api.getI18n();
   window.PetricI18n.setLocaleData(payload.locale, payload.dict);
   renderAffinityBadge(); // the badge tooltip shows the localized level name
+  if (updateBadgeState) renderUpdateBadge(updateBadgeState); // keep the update tooltip localized
 }
 
 // ---------- Legacy chat data migration ----------
@@ -1822,6 +1938,12 @@ async function initPet() {
 
   // Main-process notices (e.g. a new version is downloading) appear as a speech bubble
   window.api.onPetNotice((text) => showBubble(text, { ms: 6000 }));
+
+  // One-click update badge: shows up only when there is an update to act on, and
+  // drives download → auto-install → restart on a single click.
+  if (updateBadgeEl) updateBadgeEl.addEventListener('click', (e) => void onUpdateBadgeClick(e));
+  window.api.onUpdateState(renderUpdateBadge);
+  renderUpdateBadge(await window.api.updateGetState());
 
   // Start in click-through state (Windows); mousemove restores interaction once the cursor is over the pet
   canvas.style.cursor = 'default';

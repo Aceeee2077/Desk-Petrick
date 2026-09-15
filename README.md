@@ -213,7 +213,7 @@ npm run dist:win      # 在 Windows 上打包 Windows 版
 
 **方式一：应用内选择（推荐，打包后同样可用）**
 设置面板 → 宠物类型选「🖼️ 自定义」→ 「选择文件…」→ 选图片或 `.glb` 模型，实时生效。
-文件保存在 `userData/petric-custom/`，可随时「清除自定义外观」还原。
+文件保存在 `userData/custom/`，可随时「清除自定义外观」还原。
 
 **方式二：命令行（开发环境便捷）**
 ```bash
@@ -260,6 +260,18 @@ src/assets/animated-pets/cat.png     ← 256×256，4 行×4 列（行序：idle
 2. 在 `drawPet()` 里加一个 `kind` 分支（耳朵/尾巴/口鼻造型）；
 3. 渲染进程注册皮肤：`src/renderer/app.ts` 的 `loadSheets()` 与 `src/renderer/settings.html` 的 `#skin-seg` 按钮（并在 `src/shared/i18n.ts` 加 `settings.skinXxx` 中英文案）；
 4. `npm run sprites` 重新生成。
+
+**方式 C：用一张透明背景的图片做成宠物**
+只有一张静态图（照片或立绘）时，可以让脚本自动裁边、等比缩放并合成 4×4 四态动画：
+
+```bash
+node scripts/prepare-single-pet.mjs 你的猫.png src/assets/animated-pets/bulu.png --cell 192
+```
+
+输入图需要透明背景（先用应用内的 AI 抠图或 `npm run set-custom` 处理）；脚本按
+idle / walking / sleeping / click 生成 16 帧，替换后重新构建即可。
+`--cell` 决定单帧像素密度（默认 128）：64px 帧会按 2 倍最近邻放大（原生像素风），
+≥128px 的帧按 1:1 绘制、不做重采样，因此细节越多、画质越清晰；192 就是“更大且锐利”。
 
 动物精灵表自带完整面部；机器人的眼睛、眨眼与所有皮肤的 Zzz 由渲染进程叠加绘制。
 
@@ -314,6 +326,7 @@ petric/
 ├── scripts/
 │   ├── generate-sprites.mjs   # 像素精灵与图标生成器（零依赖 PNG 编码）
 │   ├── prepare-animated-pet.mjs # 清理、切分并标准化 4×4 动画素材
+│   ├── prepare-single-pet.mjs  # 单张透明图片 → 4×4 四态宠物精灵表
 │   ├── copy-vendor.mjs        # 从 node_modules 拷贝 three.js UMD 到 vendor/
 │   ├── make-test-model.mjs    # 生成测试 3D 模型（GLB）
 │   ├── copy-assets.mjs        # 构建时拷贝 html/css/assets 到 dist/

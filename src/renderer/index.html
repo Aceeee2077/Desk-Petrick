@@ -22,6 +22,12 @@
   <!-- Affinity hearts badge (top-right; purely visual, pointer-events: none) -->
   <div id="affinity-badge"></div>
 
+  <!-- One-click update badge (top-right): shows only when there is an update to act on -->
+  <button id="update-badge" type="button" data-state="idle" hidden>
+    <span class="ring"></span>
+    <span class="glyph">⬆</span>
+  </button>
+
   <!-- Vendored three.js UMD build (MIT) + GLTFLoader, then app scripts -->
   <script src="../assets/vendor/three.min.js"></script>
   <script src="../assets/vendor/GLTFLoader.js"></script>

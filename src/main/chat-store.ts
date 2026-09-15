@@ -90,7 +90,7 @@ function persist(): void {
         'utf8',
       );
     } catch (err) {
-      console.error('[chat-store] 保存失败:', err);
+      console.error('[chat-store] saving the chat history failed:', err);
     }
   }, 250);
 }

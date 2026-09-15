@@ -112,7 +112,7 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
-    preserveLegacyUserData();
+    migrateLegacyUserData();
     applyAutoLaunchFromConfig();
     recordLaunchStats();
     ensureSecretsEncrypted();
@@ -146,24 +146,40 @@ app.on('before-quit', () => {
 });
 
 /**
- * Petric -> Prismoo userData compatibility: point the renamed app back at the old
- * "petric"/"Petric" profile when it exists, so settings, chats and custom pets are
- * preserved for users who update instead of doing a fresh install.
+ * Petric -> Prismoo profile migration.
+ *
+ * The app now keeps its own userData folder (%APPDATA%/prismoo, ~/Library/Application
+ * Support/prismoo, …). Older Petric builds wrote to a "petric" folder, so on the first
+ * Prismoo launch copy the files that actually carry user state across — settings, chat
+ * history, saved window position and custom pet appearances. Chromium caches are left
+ * behind (they are rebuilt), the legacy folder is never modified, and the copy only
+ * happens while the Prismoo profile has no config.json yet, so it runs exactly once.
+ * (Kept in English: Windows consoles default to a legacy code page and would garble it.)
  */
-function preserveLegacyUserData() {
-  const current = app.getPath('userData');
-  const appData = app.getPath('appData');
-  const candidates = [path.join(appData, 'petric'), path.join(appData, 'Petric')];
-  const legacy = candidates.find((dir) => {
-    try {
-      return fs.statSync(dir).isDirectory();
-    } catch {
-      return false;
+function migrateLegacyUserData() {
+  const target = app.getPath('userData');
+  const legacy = path.join(app.getPath('appData'), 'petric');
+  if (path.normalize(legacy) === path.normalize(target)) return;
+  try {
+    if (!fs.statSync(legacy).isDirectory()) return;
+  } catch {
+    return; // No legacy profile — nothing to migrate.
+  }
+  if (fs.existsSync(path.join(target, 'config.json'))) return; // Already migrated or in use.
+  try {
+    fs.mkdirSync(target, { recursive: true });
+    for (const file of ['config.json', 'chat-store.json', 'position.json']) {
+      const from = path.join(legacy, file);
+      if (fs.existsSync(from)) fs.copyFileSync(from, path.join(target, file));
     }
-  });
-  if (legacy && path.normalize(legacy) !== path.normalize(current)) {
-    app.setPath('userData', legacy);
-    console.log('[main] 已沿用旧版用户数据目录:', legacy);
+    const legacyCustom = path.join(legacy, 'petric-custom');
+    const targetCustom = path.join(target, 'custom');
+    if (fs.existsSync(legacyCustom) && !fs.existsSync(targetCustom)) {
+      fs.cpSync(legacyCustom, targetCustom, { recursive: true });
+    }
+    console.log('[main] migrated legacy Petric profile into:', target);
+  } catch (err) {
+    console.error('[main] legacy profile migration failed, continuing with a fresh profile:', err);
   }
 }
 
@@ -494,7 +510,7 @@ function createTray() {
     rebuildTrayMenu();
     tray.on('click', () => openSettings()); // Left-click the tray icon on Windows
   } catch (err) {
-    console.error('[Prismoo] 托盘创建失败（可忽略）:', err);
+    console.error('[Prismoo] tray creation failed (non-fatal):', err);
   }
 }
 
@@ -625,6 +641,8 @@ let updateAutoTimer: NodeJS.Timeout | null = null;
 let updateCheckSource: UpdateCheckSource = 'auto';
 let updateInFlightWasAuto = false;
 let updateLastNoticePct = -1;
+/** Set by the one-click update badge: install as soon as the download finishes, without a dialog. */
+let autoInstallWhenReady = false;
 const releaseNotesCache = new Map<string, string>();
 
 /** Live status mirrored to settings (preferences live in config; merged on broadcast). */
@@ -797,7 +815,7 @@ async function fetchReleaseNotes(version: string): Promise<string | undefined> {
 function setupAutoUpdate() {
   autoUpdaterHandle = loadAutoUpdater();
   if (!autoUpdaterHandle) {
-    console.warn('[update] electron-updater 不可用（依赖未安装，或未以打包形式运行）');
+    console.warn('[update] electron-updater unavailable (dependency missing or not a packaged build)');
     setUpdateState({ status: 'error', error: ts('update.checkFailed') });
     return;
   }
@@ -978,13 +996,21 @@ async function handleUpdateDownloaded(info: any) {
   if (!recentlyDeferred) noticePet(ts('update.downloadedNotice', { v: 'v' + version }));
   // A checked download is a successful end state; the next auto check can wait.
   scheduleNextAutoUpdate(UPDATE_OK_CHECK_MS);
+  if (autoInstallWhenReady) {
+    // The user already clicked the one-click update badge: install silently instead of
+    // asking again, so a single click carries the whole download → restart flow.
+    autoInstallWhenReady = false;
+    noticePet(ts('update.installingNotice', { v: 'v' + version }));
+    await installUpdate(version);
+    return;
+  }
   await promptRestartAndUpdate(version);
 }
 
 /** Show the localized error; automatic checks schedule a backoff retry. */
 async function handleUpdateError(err: unknown): Promise<UpdateState> {
   const message = humanError(err);
-  console.error('[update] 更新失败:', err);
+  console.error('[update] update failed:', err);
   const wasAuto = updateInFlightWasAuto;
   updateInFlightWasAuto = false;
   setUpdateState({ status: 'error', error: message, progress: undefined });
@@ -1110,11 +1136,28 @@ async function installUpdate(version?: string): Promise<void> {
   try {
     autoUpdaterHandle.quitAndInstall();
   } catch (err) {
-    console.error('[update] quitAndInstall 失败，已打开下载页:', err);
+    console.error('[update] quitAndInstall failed, opened the download page instead:', err);
     setUpdateState({ status: 'error', error: humanError(err) });
     saveConfig({ updateDeferredVersion: '', updateDeferredAt: 0 });
     await shell.openExternal(updatePageUrl());
   }
+}
+
+/**
+ * One-click update entry point used by the pet-window / settings badge.
+ *
+ * Remembers that the user wants the pending update installed as soon as it is ready,
+ * so `handleUpdateDownloaded` can skip the "restart & update?" dialog and go straight
+ * to `quitAndInstall`. If the download already finished (auto-download was on), the
+ * install starts immediately.
+ */
+function installWhenReady(): UpdateState {
+  autoInstallWhenReady = true;
+  if (updateState.status === 'downloaded' && updateState.version) {
+    autoInstallWhenReady = false;
+    void installUpdate(updateState.version);
+  }
+  return getUpdateStateSnapshot();
 }
 
 /** Manual GitHub fallback: macOS unsigned builds / no electron-updater / dev page. */
@@ -1359,7 +1402,7 @@ async function sendChatMessage(id: string, text: string): Promise<ChatSendResult
 // ---------- Custom appearance image ----------
 /** Directory for custom images under the app data folder (works in both packaged and dev environments) */
 function customDir(): string {
-  return path.join(app.getPath('userData'), 'petric-custom');
+  return path.join(app.getPath('userData'), 'custom');
 }
 
 /** Renderer-safe URL for one custom appearance file (no base64 IPC transfer). */
@@ -1765,6 +1808,7 @@ function registerIpc() {
   ipcMain.handle('update:check', () => checkUpdates(true, 'settings'));
   ipcMain.handle('update:download', () => downloadUpdate());
   ipcMain.handle('update:install', () => installUpdate());
+  ipcMain.handle('update:install-when-ready', () => installWhenReady());
   ipcMain.handle('update:open-page', async () => shell.openExternal(updatePageUrl()));
 }
 
@@ -1835,12 +1879,12 @@ function runSmoke() {
           d.i18nProbe !== expectedReminder ||
           d.drawnPixels <= 0
         ) {
-          console.error('SMOKE_FAIL 深度自检未通过:', JSON.stringify(diag));
+          console.error('SMOKE_FAIL deep self-check failed:', JSON.stringify(diag));
           app.exit(1);
           return;
         }
       } catch (err) {
-        console.error('SMOKE_FAIL 深度自检异常:', err);
+        console.error('SMOKE_FAIL deep self-check threw:', err);
         app.exit(1);
         return;
       }
@@ -1854,6 +1898,7 @@ function runSmoke() {
       await smokeCheckHitTest();
       await smokeCheck3D();
       await smokeCheckPetWindowSizeLock();
+      await smokeCheckPetUpdateBadge();
       await smokeCheckChatWindow();
       app.exit(0);
     }, 2500);
@@ -1913,6 +1958,43 @@ async function smokeCheckSettings() {
       return;
     }
   }
+
+  // One-click update badge: it must surface on an 'available' state and hide again on 'idle'.
+  const fakeUpdateState = (status: UpdateStatus, version?: string) => ({
+    status,
+    currentVersion: '0.4.0',
+    version,
+    autoCheck: true,
+    autoDownload: true,
+    channel: 'stable' as const,
+  });
+  const readHeaderBadge = async () =>
+    JSON.parse(
+      (await win.webContents.executeJavaScript(
+        `JSON.stringify({
+          hidden: document.getElementById('header-update').hidden,
+          state: document.getElementById('header-update').dataset.state,
+          text: document.getElementById('header-update-text').textContent,
+        })`,
+      )) as string,
+    ) as { hidden: boolean; state: string; text: string };
+  win.webContents.send('update-state', fakeUpdateState('available', '9.9.9'));
+  await new Promise((r) => setTimeout(r, 250));
+  const shownBadge = await readHeaderBadge();
+  if (shownBadge.hidden || shownBadge.state !== 'available' || !shownBadge.text.includes('9.9.9')) {
+    console.error('SMOKE_FAIL settings update badge:', JSON.stringify(shownBadge));
+    app.exit(1);
+    return;
+  }
+  win.webContents.send('update-state', fakeUpdateState('idle'));
+  await new Promise((r) => setTimeout(r, 250));
+  if (!(await readHeaderBadge()).hidden) {
+    console.error('SMOKE_FAIL settings update badge did not hide again');
+    app.exit(1);
+    return;
+  }
+  console.log('SMOKE_UPDATE_BADGE_SETTINGS_OK');
+
   console.log('SMOKE_SETTINGS_OK');
   win.destroy();
 }
@@ -1974,7 +2056,7 @@ async function smokeCheckHitTest() {
   if (process.platform === 'win32') {
     // Starts in click-through mode; moving over the pet should disable it, moving to a transparent area should re-enable it
     if (overPetIgnoring !== false || transparentIgnoring !== true) {
-      console.error('SMOKE_FAIL 点击穿透状态异常: overPet=' + overPetIgnoring + ', transparent=' + transparentIgnoring);
+      console.error('SMOKE_FAIL click-through state wrong: overPet=' + overPetIgnoring + ', transparent=' + transparentIgnoring);
       app.exit(1);
       return;
     }
@@ -2185,6 +2267,71 @@ async function smokeCheckPetWindowSizeLock() {
   console.log('SMOKE_WINDOW_SIZE_LOCK_OK');
 }
 
+/** Smoke step: the pet-window one-click update badge appears, stays clickable and hides again.
+ *  The badge sits outside the pet's opaque pixels, so this also guards the click-through
+ *  hit-test integration (a visible badge that still swallowed clicks would be useless). */
+async function smokeCheckPetUpdateBadge() {
+  if (!mainWindow) return;
+  const fakeUpdateState = (status: UpdateStatus, version?: string) => ({
+    status,
+    currentVersion: '0.4.0',
+    version,
+    autoCheck: true,
+    autoDownload: true,
+    channel: 'stable' as const,
+  });
+
+  mainWindow.webContents.send('update-state', fakeUpdateState('available', '9.9.9'));
+  await new Promise((r) => setTimeout(r, 350));
+  const info = JSON.parse(
+    (await mainWindow.webContents.executeJavaScript(
+      `(() => {
+        const el = document.getElementById('update-badge');
+        const r = el.getBoundingClientRect();
+        return JSON.stringify({
+          hidden: el.hidden,
+          shown: el.classList.contains('show'),
+          state: el.dataset.state,
+          title: el.title,
+          cx: Math.round(r.left + r.width / 2),
+          cy: Math.round(r.top + r.height / 2),
+        });
+      })()`,
+    )) as string,
+  ) as { hidden: boolean; shown: boolean; state: string; title: string; cx: number; cy: number };
+
+  if (info.hidden || !info.shown || info.state !== 'available' || !info.title.includes('9.9.9')) {
+    console.error('SMOKE_FAIL pet update badge:', JSON.stringify(info));
+    app.exit(1);
+    return;
+  }
+
+  const start = Date.now();
+  while (Date.now() - start < 4000 && petIgnoreMouse) {
+    await mainWindow.webContents.executeJavaScript(
+      `window.dispatchEvent(new MouseEvent('mousemove', { clientX: ${info.cx}, clientY: ${info.cy}, bubbles: true }))`,
+    );
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  if (process.platform === 'win32' && petIgnoreMouse) {
+    console.error('SMOKE_FAIL pet update badge is not clickable (window still click-through)');
+    app.exit(1);
+    return;
+  }
+
+  mainWindow.webContents.send('update-state', fakeUpdateState('idle'));
+  await new Promise((r) => setTimeout(r, 400));
+  const hidden = (await mainWindow.webContents.executeJavaScript(
+    `document.getElementById('update-badge').hidden`,
+  )) as boolean;
+  if (!hidden) {
+    console.error('SMOKE_FAIL pet update badge did not hide again');
+    app.exit(1);
+    return;
+  }
+  console.log('SMOKE_UPDATE_BADGE_PET_OK');
+}
+
 /** Smoke step: double-clicking the pet opens the standalone ChatGPT-style chat window, and
  *  the conversation store (create / rename / archive / delete) round-trips through IPC
  *  with the UI following along. Any test conversation is deleted at the end, so a user's
@@ -2241,7 +2388,7 @@ async function smokeCheckChatWindow() {
     await new Promise((r) => setTimeout(r, 150));
   }
   if (!ready) {
-    console.error('SMOKE_FAIL 对话窗口未在超时内就绪');
+    console.error('SMOKE_FAIL chat window not ready before the timeout');
     app.exit(1);
     return;
   }
@@ -2310,7 +2457,7 @@ async function smokeCheckChatWindow() {
     result.finalCount === result.countBefore &&
     !result.stillThere;
   if (!okUi || !okStore || errors.length) {
-    console.error('SMOKE_FAIL 对话窗口 CRUD:', JSON.stringify({ result, okUi, okStore, errors }));
+    console.error('SMOKE_FAIL chat window CRUD:', JSON.stringify({ result, okUi, okStore, errors }));
     app.exit(1);
     return;
   }

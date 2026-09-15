@@ -209,6 +209,8 @@ async function initSettings() {
   const btnDownloadUpdate = $<HTMLButtonElement>('btn-download-update');
   const btnInstallUpdate = $<HTMLButtonElement>('btn-install-update');
   const btnOpenUpdate = $<HTMLButtonElement>('btn-open-update');
+  const headerUpdateEl = $<HTMLButtonElement>('header-update');
+  const headerUpdateTextEl = $<HTMLSpanElement>('header-update-text');
   const accessoryButtons = Array.from(
     document.querySelectorAll<HTMLButtonElement>('#accessory-seg button'),
   );
@@ -417,6 +419,29 @@ async function initSettings() {
       updateProgressText.textContent = pct + '%';
     }
 
+    // Header one-click badge: only surfaces when there is an update to act on, and it
+    // runs the whole download → auto-install → restart flow on a single click.
+    const headerVisible =
+      s.status === 'available' ||
+      s.status === 'downloading' ||
+      s.status === 'downloaded' ||
+      (s.status === 'error' && !!s.version);
+    headerUpdateEl.hidden = !headerVisible;
+    if (headerVisible) {
+      headerUpdateEl.dataset.state = s.status;
+      headerUpdateTextEl.textContent =
+        s.status === 'available'
+          ? s.manualUrl
+            ? t('updateBadge.manual', { v: offered })
+            : t('updateBadge.available', { v: offered })
+          : s.status === 'downloading'
+            ? t('updateBadge.downloading', { p: pct })
+            : s.status === 'downloaded'
+              ? t('updateBadge.downloaded', { v: offered })
+              : t('updateBadge.error');
+      headerUpdateEl.title = headerUpdateTextEl.textContent;
+    }
+
     btnCheckUpdate.disabled =
       s.status === 'checking' || s.status === 'downloading' || s.status === 'dev';
     btnDownloadUpdate.hidden = !(s.status === 'available' && !s.autoDownload && !s.manualUrl);
@@ -608,6 +633,30 @@ async function initSettings() {
     await window.api.updateInstall();
   });
   btnOpenUpdate.addEventListener('click', () => void window.api.updateOpenPage());
+
+  // Header one-click badge: same download → auto-install → restart flow as the pet badge.
+  headerUpdateEl.addEventListener('click', async () => {
+    const s = lastUpdateState;
+    if (!s) return;
+    if (s.status === 'downloaded') {
+      await window.api.updateInstall();
+      return;
+    }
+    if (s.status === 'error') {
+      renderUpdateState(await window.api.updateCheck());
+      return;
+    }
+    if (s.manualUrl) {
+      await window.api.updateOpenPage();
+      return;
+    }
+    if (s.status === 'available' || s.status === 'downloading') {
+      renderUpdateState(await window.api.updateInstallWhenReady());
+      if (s.status === 'available' && !s.autoDownload) {
+        renderUpdateState(await window.api.updateDownload());
+      }
+    }
+  });
 
   // Update progress / status pushed by the main process (plus one initial snapshot).
   window.api.onUpdateState(renderUpdateState);
