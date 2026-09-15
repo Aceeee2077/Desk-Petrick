@@ -230,6 +230,26 @@ pub fn close_chat(app: AppHandle) {
     }
 }
 
+/// Whether Prismoo is registered to start with the OS session.
+#[tauri::command]
+pub fn autolaunch_get(app: AppHandle) -> bool {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+/// Enable / disable auto-launch and report the resulting state.
+#[tauri::command]
+pub fn autolaunch_set(app: AppHandle, enabled: bool) -> bool {
+    use tauri_plugin_autostart::ManagerExt;
+    let manager = app.autolaunch();
+    let _ = if enabled {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
+    manager.is_enabled().unwrap_or(enabled)
+}
+
 /// Set the pet window's opacity (0.5 - 1.0).
 #[tauri::command]
 pub fn set_window_opacity(app: AppHandle, opacity: f64) -> Result<(), String> {

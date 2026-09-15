@@ -64,7 +64,14 @@ child.on('exit', (code) => {
     pet.drawnPixels > 0 &&
     pet.hitTestOverPet === true &&
     pet.hitTestCorner === false;
-  const settingsOk = settings && settings.hasApi && settings.hasPanel && settings.configRoundTrip;
+  const settingsOk =
+    settings &&
+    settings.hasApi &&
+    settings.hasPanel &&
+    settings.configRoundTrip &&
+    settings.restored &&
+    settings.autoLaunchFlag &&
+    settings.customResponds;
   const chatOk =
     chat &&
     chat.hasApi &&

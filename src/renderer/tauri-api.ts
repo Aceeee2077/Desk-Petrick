@@ -38,6 +38,26 @@
     void invoke(cmd, args).catch((err) => console.error(`[tauri-api] ${cmd} failed:`, err));
   };
 
+  /** Local YYYY-MM-DD: the webview knows the timezone, so Rust does not need one. */
+  const localDate = (): string => {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${now.getFullYear()}-${month}-${day}`;
+  };
+
+  /** Turn an absolute path into an `asset:` URL the <img> tag can load. */
+  const toAssetUrl = (path?: string): string | undefined => {
+    const convert = (window as unknown as { __TAURI__?: { core?: { convertFileSrc?: (p: string) => string } } })
+      .__TAURI__?.core?.convertFileSrc;
+    if (!path || !convert) return undefined;
+    try {
+      return convert(path);
+    } catch {
+      return undefined;
+    }
+  };
+
   /** Subscribe to a backend event; returns an unsubscribe function. */
   const subscribe = <T>(event: string, cb: (payload: T) => void): (() => void) => {
     let unlisten: (() => void) | null = null;
@@ -187,8 +207,8 @@
     aiChat: (messages) => call<string>('ai_chat', { messages }),
 
     // ---- Auto launch ----
-    autoLaunchGet: () => Promise.resolve(false),
-    autoLaunchSet: (enabled) => Promise.resolve(enabled),
+    autoLaunchGet: () => call<boolean>('autolaunch_get'),
+    autoLaunchSet: (enabled) => call<boolean>('autolaunch_set', { enabled }),
 
     // ---- Updates (tauri-plugin-updater lands in a later step) ----
     updateGetState: () => Promise.resolve(updateDevState()),
@@ -212,16 +232,22 @@
     onChatReward: (cb) => subscribe<void>('pet:chat-reward', () => cb()),
     onPetNotice: (cb) => subscribe<string>('pet:notice', cb),
 
-    // ---- Custom appearance (image pipeline port pending) ----
-    getCustomImage: () => Promise.resolve({ ok: false, error: 'custom appearance not ported yet' }),
-    pickCustomImage: () => Promise.resolve({ ok: false, error: 'custom appearance not ported yet' }),
-    clearCustomImage: () => Promise.resolve(false),
+    // ---- Custom appearance (image only; ONNX background removal was dropped) ----
+    getCustomImage: async () => {
+      const res = await call<CustomImageResult>('custom_get');
+      return { ...res, url: res.url ?? toAssetUrl(res.path) };
+    },
+    pickCustomImage: async () => {
+      const res = await call<CustomImageResult>('custom_pick');
+      return { ...res, url: res.url ?? toAssetUrl(res.path) };
+    },
+    clearCustomImage: () => call<boolean>('custom_clear'),
 
     // ---- i18n ----
     getI18n: () => call<I18nPayload>('i18n_get'),
 
-    // ---- Weather (Rust HTTP client pending) ----
-    getWeather: () => Promise.resolve({ ok: false, error: 'weather not ported yet' }),
+    // ---- Weather (fetched in Rust to dodge CORS) ----
+    getWeather: () => call<WeatherResult>('weather_get', { date: localDate() }),
   };
 
   window.api = api;

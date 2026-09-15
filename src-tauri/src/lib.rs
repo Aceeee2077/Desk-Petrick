@@ -9,8 +9,10 @@
 mod ai;
 mod chat;
 mod config;
+mod custom;
 mod i18n;
 mod tray;
+mod weather;
 mod window;
 
 use tauri::{AppHandle, Manager};
@@ -94,6 +96,17 @@ const SETTINGS_CHECK_JS: &str = r#"
     out.configRoundTrip = after.animSpeed === target;
     await window.api.setConfig({ animSpeed: before.animSpeed });
     out.restored = (await window.api.getConfig()).animSpeed === before.animSpeed;
+
+    // Auto-launch and custom appearance are local, so they must answer immediately.
+    out.autoLaunchFlag = typeof (await window.api.autoLaunchGet()) === 'boolean';
+    out.customResponds = typeof (await window.api.getCustomImage()).ok === 'boolean';
+
+    // Weather depends on two public APIs; record it without failing the check.
+    const weather = await Promise.race([
+      window.api.getWeather(),
+      new Promise((resolve) => setTimeout(() => resolve(null), 3000)),
+    ]);
+    out.weather = weather ? (weather.ok ? 'ok' : 'unavailable') : 'timeout';
   } catch (err) {
     out.error = String(err);
   }
@@ -205,11 +218,16 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--autostart"]),
+        ))
         .setup(|app| {
             let config = config::init(app.handle());
             app.manage(config);
             let chats = chat::ChatState::init(app.handle());
             app.manage(chats);
+            app.manage(weather::WeatherState::default());
             app.manage(window::DragState::default());
             tray::build(app.handle())?;
 
@@ -247,6 +265,12 @@ pub fn run() {
             chat::chats_set_active,
             chat::chats_import_legacy,
             chat::chats_send,
+            weather::weather_get,
+            custom::custom_get,
+            custom::custom_pick,
+            custom::custom_clear,
+            window::autolaunch_get,
+            window::autolaunch_set,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Prismoo");
