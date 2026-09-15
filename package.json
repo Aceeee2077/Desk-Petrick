@@ -30,6 +30,7 @@
     "release": "node scripts/release.mjs"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^20.14.0",
     "@types/three": "^0.147.0",
     "electron": "^33.2.0",
