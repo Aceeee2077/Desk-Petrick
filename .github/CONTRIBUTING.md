@@ -1,24 +1,27 @@
 # Contributing / 贡献指南
 
-Thanks for considering contributing to Petric — code, art, or docs! 🎉
-感谢你愿意为 Petric 贡献代码、美术或文档！
+Thanks for considering contributing to Prismoo — code, art, or docs! 🎉
+感谢你愿意为 Prismoo 贡献代码、美术或文档！
 
 ## Development Environment / 开发环境
 
 ```bash
-# Requirements: Node.js >= 18 / 环境要求：Node.js ≥ 18
+# Requirements: Node.js >= 18 + Rust toolchain + WebView2 / 环境要求：Node.js ≥ 18 + Rust 工具链 + WebView2
 npm install
-npm run dev        # Build & launch the dev version / 构建 + 启动开发版本
-npm run smoke      # Build & smoke self-check (deep diagnostics, exit code 0 = pass) / 构建 + 冒烟自检（含深度诊断，退出码 0 = 通过）
+npm run build            # Front-end build (sprites + TypeScript + assets) / 前端构建
+npm run tauri:build      # Compile the Tauri debug build / 编译 Tauri 调试版
+npm run tauri:check      # Three-phase self-check, exit code 0 = pass / 三阶段自检，退出码 0 = 通过
+npx tauri build          # Package the installer / 打包安装包
 ```
 
 ## Project Layout / 项目结构速览
 
 ```
-src/main/     Main process (window / tray / IPC / AI requests / auto-launch) / 主进程
-src/renderer/ Renderer (app.ts = pet animation & interactions; settings = panel; screenshot = README images) / 渲染层
-src/shared/   Shared types & config (types.ts / config.ts / png.ts) / 共享类型与配置
-scripts/      Build & tooling (sprite generator / asset copy / Electron launcher / set custom skin) / 构建与工具
+src-tauri/    Rust backend (window / tray / config / chat store / AI / weather / updater) / Rust 后端
+src/renderer/ Renderer (app.ts = pet animation & interactions; settings = panel; chat = chat window) / 渲染层
+src/renderer/tauri-api.ts  Compatibility shim that reimplements window.api on Tauri / window.api 兼容层
+src/shared/   Shared types & i18n dictionaries / 共享类型与 i18n 字典
+scripts/      Build & tooling (sprite generator / i18n resource gen / self-check runner) / 构建与工具
 ```
 
 ## Commit Guidelines / 提交规范
@@ -29,7 +32,7 @@ scripts/      Build & tooling (sprite generator / asset copy / Electron launcher
   / Commit 信息用中文或英文均可，建议采用 `类型(范围): 描述` 的格式
 - Before opening a PR, make sure: / PR 前请确保：
   - `npm run build` passes (sprites + TypeScript + asset copy) / `npm run build` 通过
-  - `npm run smoke` passes / `npm run smoke` 通过
+  - `npm run tauri:check` passes / `npm run tauri:check` 通过
   - Meaningful feature changes include a short description (screenshots or GIFs welcome)
     / 有实际意义的功能改动附带简单说明（最好有演示 GIF 或截图）
 

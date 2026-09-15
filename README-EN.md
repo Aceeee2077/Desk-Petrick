@@ -3,14 +3,15 @@
 > **English** | [中文](./README.md)
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
-![Electron](https://img.shields.io/badge/Electron-33-47848F?logo=electron&logoColor=white)
+![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-1.97-000000?logo=rust&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-8A2BE2)
-![3D](https://img.shields.io/badge/3D-three.js-000000?logo=three.js&logoColor=white)
+![Size](https://img.shields.io/badge/installer-8.6%20MB-2ea44f)
 
 ![prismoo brand](./docs/prismoo-brand.png)
 
-> A transparent, always-on-top desktop pet built with **Electron + TypeScript + HTML5 Canvas** (MVP).
+> A transparent, always-on-top desktop pet built with **Tauri 2 + Rust + TypeScript + HTML5 Canvas** (MVP).
 > Supports Windows / macOS / Linux — pixel-art sprite animation, drag-and-walk, sleeping, click interactions, and OpenAI-compatible AI chat.
 
 ![pet cat preview](./docs/screenshots/pet-cat-en.png)
@@ -18,9 +19,10 @@
 
 ## 📥 Download
 
-End users should download the latest `Prismoo-Setup-x.y.z.exe` installer from
+End users should download the latest `Prismoo_x.y.z_x64-setup.exe` installer (~8.6 MB) from
 [GitHub Releases](https://github.com/Aceeee2077/Desk-Petrick/releases/latest).
-`win-unpacked/Prismoo.exe` depends on the files beside it and must not be distributed alone.
+
+You can also build it yourself — see "Packaging & Distribution"; one `npx tauri build` produces the installer.
 
 ---
 
@@ -31,9 +33,7 @@ End users should download the latest `Prismoo-Setup-x.y.z.exe` installer from
 | 🪟 Transparent always-on-top window | 300×300, frameless, always on top, hidden from taskbar, draggable |
 | 🌐 Chinese/English switch | One-click UI language toggle in Settings (中文 / English); speech lines and bubbles follow |
 | 🐱 Animated pixel pets | Gray cat / fox / rabbit / Bulu / robot, with real per-frame limb, tail and ear animation across four states |
-| 🧊 3D model skins | Custom appearance supports GLB 3D models (WebGL rendering + raycast hit testing + procedural animation) |
-| ✂️ Local AI cutout | Detects a person, pet, or main object and creates a transparent PNG locally (no upload, toggleable, adjustable strength) |
-| 🐾 Photo pet | Upload your own pet photo → AI cutout → it becomes the desktop pet, with whole-image actions (dance / stretch / tilt…) |
+| 🐾 Photo pet | Upload your own pet photo → automatic background removal → it becomes the desktop pet, with whole-image actions (dance / stretch / tilt…) |
 | 👀 Eye tracking | The robot has procedural eye tracking; mark the two eyes on a photo pet to enable tracking, blinking and sleep closure |
 | 🎞️ Four animation states | `idle` (breathing + blinking + tail wag) · `walking` (alternating limb steps) · `sleeping` · `click` (jump) |
 | 💬 Click dialogue | Single-click plays a jump animation + random speech bubble (customizable) |
@@ -48,10 +48,10 @@ End users should download the latest `Prismoo-Setup-x.y.z.exe` installer from
 | 🚶 Auto wander | The pet walks / runs / jumps around your desktop on its own (not just when dragged); stays awake instead of sleeping while on (toggleable) |
 | 📊 Interaction stats | Days together, click / chat counts and an affinity growth curve (chart in Settings) |
 | 💬 Proactive chat | After 10 idle minutes the pet says hi on its own (toggleable) |
-| ☁️ Weather | Clicking the pet sometimes reports today's weather (free APIs, fetched by the main process, toggleable) |
+| ☁️ Weather | Clicking the pet sometimes reports today's weather (free APIs, fetched from Rust, toggleable) |
 | ⏰ Hourly chime | The pet jumps and announces each hour (toggleable) |
 | 📍 Position memory | Remembers its position and returns there on restart |
-| 🔄 Auto-update | Installed builds check GitHub Releases for new versions shortly after launch — background download, then a one-click "restart & update" prompt (Discord-style; manual check from the tray / pet context menu) |
+| 🔄 Auto-update | ⏳ Not wired up yet: the Tauri build is still mid-migration, so this installer does not self-update |
 
 **Quick interactions**
 
@@ -71,20 +71,32 @@ End users should download the latest `Prismoo-Setup-x.y.z.exe` installer from
 
 ### Requirements
 
-- Node.js ≥ 18 (20+ recommended for development)
-- npm (bundled with Node)
+- **Node.js ≥ 18** (20+ recommended) and npm
+- **Rust toolchain**: install the stable channel via [rustup](https://rustup.rs/)
+- **Windows**: Visual Studio Build Tools (with "Desktop development with C++") + the WebView2 runtime (bundled with Windows 11, usually present on Windows 10 too)
+- **macOS**: Xcode Command Line Tools
+- **Linux**: `webkit2gtk` / `libayatana-appindicator` etc. — see [Tauri prerequisites](https://tauri.app/start/prerequisites/)
 
 ### Install & Run
 
 ```bash
-# 1. Install dependencies (first run downloads the Electron binary, ~100MB)
+# 1. Install dependencies
 npm install
 
-# 2. Build & launch (auto-generates sprites, compiles TS, starts the app)
-npm run dev
+# 2. Build the front end (sprites + TypeScript + assets into dist/)
+npm run build
+
+# 3. Compile and launch the debug build
+npm run tauri:build
+./src-tauri/target/debug/prismoo.exe
 ```
 
 A pixel kitten will appear at the center of your screen. Try dragging it, clicking it, double-clicking it, and pressing `Ctrl + Shift + P` to open settings.
+
+> 💡 **Debug vs release**
+> `npm run tauri:build` produces a debug binary that keeps a console window — that's where `println!`,
+> panics and the `npm run tauri:check` report go. Use `npm run tauri:build:release` for a console-free
+> build at `src-tauri/target/release/prismoo.exe`.
 
 > 💡 **Windows note (PowerShell execution policy)**
 > If you see `npm.ps1 cannot be loaded because running scripts is disabled`, either:
@@ -98,63 +110,69 @@ A pixel kitten will appear at the center of your screen. Try dragging it, clicki
 > npm run dev
 > ```
 >
-> This project ships a launch wrapper (`scripts/run-electron.mjs`) that clears any
-> injected `ELECTRON_RUN_AS_NODE` variable (which would make Electron run as plain
-> Node) and runs Electron with inherited stdio so logs and exit codes pass through.
+> 💡 **Slow or timing-out crates.io downloads**
+> This project ships a machine-local mirror config at `src-tauri/.cargo/config.toml` (rsproxy).
+> It is git-ignored, so CI and other machines keep using the default source; delete the file to revert.
 
 ### Useful Scripts
 
 | Command | Description |
 | :--- | :--- |
-| `npm run dev` | Build and launch the dev version |
-| `npm run build` | Generate sprites + compile TypeScript + copy static assets to `dist/` |
+| `npm run build` | Front-end build: sprites / icons / TypeScript / assets / `src-tauri/resources/i18n.json` |
+| `npm run tauri:build` | Compile the Tauri debug build (`src-tauri/target/debug/prismoo.exe`) |
+| `npm run tauri:build:release` | Compile the Tauri release build (no console window) |
+| `npm run tauri:check` | Compile and run the three-phase self-check (pet render / settings read-write / chat CRUD); exit code 0 = pass |
+| `npx tauri build` | Package the installer (NSIS on Windows) into `src-tauri/target/release/bundle/` |
 | `npm run sprites` | Regenerate the pixel sprites and icons only (`scripts/generate-sprites.mjs`) |
-| `npm run smoke` | Build and run the smoke test (checks pet window + settings panel + chat window with deep diagnostics; exit code 0 = pass) |
-| `npm run dist` | Package the current platform (Windows: NSIS / macOS: DMG / Linux: AppImage + deb) |
-| `npm run dist:win` / `dist:mac` / `dist:linux` | Package a specific platform |
+| `npm run brand-icons` | Regenerate the brand icons (`icon.png` / `ico` / `icns` / `tray.png`) |
 
 ---
 
 ## 📦 Packaging & Distribution
 
-Uses [electron-builder](https://www.electron.build/); see `electron-builder.yml`:
+Uses [Tauri 2](https://tauri.app/); see `src-tauri/tauri.conf.json`:
 
-- **Windows**: `.exe` (NSIS installer, custom install directory, desktop shortcut)
-- **macOS**: `.dmg` + `.zip` (unsigned — on first launch use right-click → Open, or configure your own signing)
-- **Linux**: `.AppImage` + `.deb`
+- **Windows**: `.exe` (NSIS installer, custom install directory, desktop and Start-menu shortcuts)
+- **macOS**: `.dmg` / `.app`
+- **Linux**: `.AppImage` / `.deb`
 
 ```bash
-npm run dist          # package the current platform
-npm run dist:win      # package the Windows build on Windows
+npm run build       # build the front end (npx tauri build does this automatically too)
+npx tauri build     # package the current platform
 ```
 
-Artifacts are written to the `release/` directory.
+Artifacts land in `src-tauri/target/release/bundle/`:
+
+```
+src-tauri/target/release/bundle/nsis/Prismoo_0.5.0_x64-setup.exe
+```
+
+For reference: the installer is about **8.6 MB** and the executable about **11.3 MB**
+(the Electron build was 140 MB / 188 MB).
 
 > ⚠️ Platform notes:
-> - Cross-platform packaging (e.g., building a macOS package on Windows) requires the target
->   platform environment; use per-platform runners in CI (GitHub Actions) for release builds.
+> - Tauri uses the system WebView (WebView2 on Windows), so **no browser engine is bundled** —
+>   that is where the size reduction comes from.
+> - Cross-platform packaging requires the target platform; use per-platform runners in CI
+>   (GitHub Actions) for release builds.
 > - A production macOS release needs an Apple Developer certificate and notarization; unsigned
 >   builds are fine for personal use.
 > - Windows SmartScreen may warn "Unknown publisher" on first launch — click
 >   "More info → Run anyway" (configure code-signing for official distribution).
+> - If target machines may lack WebView2, switch `bundle.windows.webviewInstallMode` in
+>   `tauri.conf.json` to an offline/embedded installer.
 
-### 🔄 Auto-update (Discord-style)
+### 🔄 Auto-update
 
-About 8 seconds after launch, installed builds check **GitHub Releases** for a newer version
-(`electron-updater`): the update downloads in the background, then a "🔄 Restart & Update"
-dialog appears — one click quits, installs and relaunches the new version. There is also a
-"🔄 Check for Updates" item in the tray / pet context menu (dev mode says it's unavailable).
-
-- **Windows (NSIS) / Linux (AppImage)**: fully automatic download & install. Unsigned macOS
-  builds can't auto-install — they open the download page for a manual update instead.
-- For each release, upload the installer **together with the metadata files** electron-builder
-  generates, to the GitHub Release of that tag:
-  - Windows: `Prismoo-Setup-x.y.z.exe` + `latest.yml` + `.blockmap`
-  - Linux: `Prismoo-x.y.z.AppImage` + `latest-linux.yml`
-  - The tag must match the package version (`0.3.1` currently maps to `v0.3.1`).
-- Local builds are never uploaded automatically: run `npm run dist:win` and attach the
-  `release/` artifacts to the Release manually.
-- Auto-update only applies to **installed packaged builds**; `npm run dev` never triggers it.
+> ⏳ **In progress**: the Tauri build has not been wired to `tauri-plugin-updater` yet, so this
+> installer does **not** self-update. Until then, download the new installer from
+> [GitHub Releases](https://github.com/Aceeee2077/Desk-Petrick/releases/latest) and install over the old one.
+>
+> The pre-migration Electron build used `electron-updater`: it generated a `latest.yml` manifest
+> next to the installer on the GitHub Release, and about 8 seconds after launch the app compared
+> versions, downloaded in the background, then offered a "🔄 Restart & Update" dialog.
+> Tauri's equivalent is `latest.json` plus a minisign signature, which will be wired up in a
+> follow-up (the "Check for Updates" items in the tray and pet context menu are disabled until then).
 
 ---
 
@@ -166,14 +184,13 @@ dialog appears — one click quits, installs and relaunches the new version. The
 | Theme | Light (orange-white gradient) / Dark (original purple) — the pet window, chat window and settings panel switch together |
 | Pet type | Gray cat 🐱 / Fox 🦊 / Rabbit 🐰 / Bulu 🐈 / Robot 🤖 — switches instantly |
 | Accessory | None / Hat 🎩 / Scarf 🧣 / Glasses 👓 — procedural pixel art for the robot skin |
-| Auto cutout | Local U-2-Netp subject segmentation for complex photo backgrounds; strength slider 8–60; applies to "Single image" and "2.5D standee" modes |
 | Eye tracking | In "Single image" mode, mark the two eyes on your photo — pupils follow the cursor and blink |
 | Affinity | Current affinity value and level (clicking / dragging / chatting raise it; persisted) |
 | Interaction stats | Days together, first day, click / chat counts and the affinity growth curve |
 | Animation speed | 0.5x ~ 2x slider, applies to all animation frame rates |
-| Opacity | 0.5 ~ 1.0 slider (whole-window opacity) |
+| Opacity | 0.5 ~ 1.0 slider (not effective in the Tauri build yet — see "Known Limitations") |
 | Click sound | Web Audio synthesized sound, toggleable |
-| Auto-launch | Based on the native `app.setLoginItemSettings` API |
+| Auto-launch | Based on `tauri-plugin-autostart` (Windows Run key / macOS LaunchAgent / Linux .desktop) |
 | Auto wander | The pet walks / runs / jumps around the desktop by itself; while on it stays awake (no 30 s auto-sleep), off restores the original sleep behavior |
 | Reset position | Back to the center of the primary display |
 | Focus Mode | Break-reminder toggle + interval (20 / 30 / 40 / 60 / 90 minutes) |
@@ -206,8 +223,13 @@ chat, archive (📁 Archived section), rename or delete** conversations; both th
 the chat window share the same history in real time.
 
 > 🔒 **Privacy & data location**: the API key and chat history stay on your machine
-> - AI config: `userData/config.json`
-> - Chat history: `userData/chat-store.json` (persisted by the main process, shared by the pet window and the chat window)
+> - AI config: `<app config dir>/config.json`
+> - Chat history: `<app config dir>/chat-store.json` (persisted by Rust, shared by the pet window and the chat window)
+> - On Windows the app config dir is `%APPDATA%\com.petric.desktop-pet\`
+>
+> ⚠️ The Tauri build uses a different config directory than the pre-migration Electron build
+> (`%APPDATA%\Prismoo\`), so old settings and chat history are not carried over — a one-time
+> migration is not implemented yet.
 > Nothing is uploaded anywhere except to the AI provider you configured. AI is off by default and
 > costs nothing until you add a key.
 
@@ -215,14 +237,14 @@ the chat window share the same history in real time.
 
 ## 🎨 Customization Guide
 
-### 0. 🖼️ Use Your Own Image or 3D Model as the Pet
+### 0. 🖼️ Use Your Own Image as the Pet
 
-> Besides the built-in cat/fox/rabbit, you can use any image or 3D model as your pet — dragging,
-> clicking, sleeping, AI chat, and settings all keep working (3D mode uses raycast hit testing).
+> Besides the built-in cat/fox/rabbit, you can use any image as your pet — dragging,
+> clicking, sleeping, AI chat, and settings all keep working.
 
 **Way 1: In-app (recommended, works in packaged builds too)**
-Settings → Pet type → "🖼️ Custom" → "Choose File…" → pick an image or a `.glb` model, applied instantly.
-The file is stored in `userData/custom/`; use "Clear Custom Appearance" to restore.
+Settings → Pet type → "🖼️ Custom" → "Choose File…" → pick an image, applied instantly.
+The file is copied into the app config directory's `custom/` folder; use "Clear Custom Appearance" to restore.
 
 **Way 2: Command line (handy in dev)**
 ```bash
@@ -232,26 +254,26 @@ node scripts/set-custom.mjs your-image.png
 # Sprite sheet (4 rows × 4 columns frame animation)
 node scripts/set-custom.mjs your-sheet.png --mode sheet
 
-# 3D model (.glb, auto-detected, no --mode needed)
-node scripts/set-custom.mjs your-model.glb
-
 # Restore default
 node scripts/set-custom.mjs --clear
 ```
 
-**Four appearance types**
+**Two appearance types**
 
 | Type | Description |
 | :--- | :--- |
-| Single image | Any PNG / JPG / WebP / GIF (≤15MB). Shown as-is; the app adds procedural breathing / walking bounce / sleep dimming / click jump. Animated GIFs play their own animation. |
+| Single image | Any PNG / JPG / WebP / GIF (≤60MB). Shown as-is; the app adds procedural breathing / walking bounce / sleep dimming / click jump. Animated GIFs play their own animation. |
 | Sprite sheet | 4 rows × 4 columns, equal-sized frames (row order: idle / walking / sleeping / click); frame size is auto-detected and all four animation states are preserved. |
-| 3D model | GLB format (≤60MB). WebGL rendering, auto-fitted size & lighting, procedural idle / walking / sleeping / click animation, raycast hit testing. Export from Blender (glTF Binary) or VRoid Studio. |
-| 2.5D standee | A single image placed in the 3D scene: it turns toward the cursor and leans while dragging, with real perspective — looks 3D while staying a flat plane; hit testing uses raycast + texture-alpha refinement. |
 
 > ⚠️ Note: with a custom image or model, "eye tracking" is disabled automatically (the built-in
 > robot eyes are drawn by the renderer and can't be positioned on arbitrary assets); all other
-> interactions remain. Images with transparent backgrounds look best. 3D mode requires WebGL
-> support (available on virtually all machines).
+> interactions remain. Images with transparent backgrounds look best.
+>
+> ⏳ **Differences from the Electron build**: 3D model (`.glb`) skins and the local U-2-Netp
+> auto-cutout are **not available** in the Tauri build yet — they were deliberately dropped during
+> the migration in exchange for a much smaller, lighter app. Importing an image still runs the
+> renderer's built-in tolerance-based cutout, but it handles busy photo backgrounds less well than
+> the old model did.
 
 ### 1. Replacing / Adding Sprite Sheets
 
@@ -311,78 +333,88 @@ lines: ['Meow~', "Don't touch me!", 'I\'m hungry…'],       // enDict
 ## 🗂️ Project Structure
 
 ```
-petric/
+prismoo/
+├── src-tauri/                 # Tauri 2 backend (Rust)
+│   ├── src/
+│   │   ├── lib.rs             # Entry point: plugins / commands / three-phase self-check
+│   │   ├── window.rs          # Window move · drag · click-through · settings/chat windows · auto-launch
+│   │   ├── config.rs          # Config read/write (<app config>/config.json)
+│   │   ├── i18n.rs            # Embedded zh/en dictionaries for the tray and native dialogs
+│   │   ├── tray.rs            # Tray icon + pet context menu
+│   │   ├── chat.rs            # Conversation store (chat-store.json) + message orchestration
+│   │   ├── ai.rs              # AI requests (reqwest) and the persona system prompt
+│   │   ├── weather.rs         # Weather (ipwho.is + Open-Meteo, cached)
+│   │   └── custom.rs          # Custom appearance: pick · copy · expose via the asset protocol
+│   ├── resources/i18n.json    # Generated from src/shared/i18n.ts
+│   ├── capabilities/          # Tauri permission declarations
+│   ├── icons/                 # Installer / tray icons
+│   └── tauri.conf.json        # Window · bundling · CSP configuration
 ├── src/
-│   ├── main/
-│   │   ├── main.ts            # Main process: window/tray/IPC/AI requests/chat orchestration/auto-launch
-│   │   ├── chat-store.ts      # Conversation store: local persistence (userData/chat-store.json)
-│   │   └── preload.ts         # contextBridge exposes window.api
 │   ├── renderer/
+│   │   ├── tauri-api.ts       # Compatibility shim: reimplements window.api on Tauri invoke
 │   │   ├── index.html         # Pet window page
 │   │   ├── styles.css         # Pet window styles (transparent bg / bubbles / affinity badge)
-│   │   ├── i18n.ts            # Renderer i18n (window.PetricI18n, dictionary from the main process)
+│   │   ├── i18n.ts            # Renderer i18n (window.PetricI18n, dictionary from Rust)
 │   │   ├── app.ts             # Canvas drawing, animation state machine, drag, interactions & chat rewards
-│   │   ├── pet3d.ts           # 3D model rendering (three.js UMD + GLTFLoader, raycast hit testing)
-│   │   ├── chat.html / chat.css / chat.ts   # ChatGPT-style chat window (conversation list / messages / archive)
-│   │   ├── settings.html      # Settings panel page
-│   │   ├── settings.css       # Glassmorphism settings panel styles
-│   │   └── settings.ts        # Settings panel logic
+│   │   ├── chat.html / chat.css / chat.ts              # ChatGPT-style chat window
+│   │   ├── settings.html / settings.css / settings.ts  # Settings panel
+│   │   └── pet3d.ts           # Legacy 3D renderer (no entry point left; pending removal)
 │   ├── shared/
 │   │   ├── types.ts           # Global shared types (compile-time only, no runtime)
-│   │   ├── config.ts          # Config read/write (userData/config.json)
 │   │   └── i18n.ts            # Chinese/English UI string dictionaries (single source)
 │   └── assets/
 │       ├── sprite-sources/    # Original cat / fox / rabbit reference art
 │       ├── animated-pets/     # 64px four-state sheets for gray cat / fox / rabbit / Bulu
 │       ├── sprites/           # Procedural robot and compatibility sheets
-│       ├── models/            # Test 3D model test-pet.glb
-│       ├── vendor/            # Vendored three.js UMD build (MIT)
-│       ├── icon.png / icon.ico / icon.icns / tray.png
+│       └── icon.png / icon.ico / icon.icns / tray.png
 ├── scripts/
 │   ├── generate-sprites.mjs   # Pixel sprite & icon generator (zero-dependency PNG encoder)
-│   ├── prepare-animated-pet.mjs # Cleans, slices and normalizes 4×4 animation art
-│   ├── prepare-single-pet.mjs  # One transparent image → 4×4 four-state pet sheet
-│   ├── copy-vendor.mjs        # Copies the three.js UMD build from node_modules into vendor/
-│   ├── make-test-model.mjs    # Generates the test 3D model (GLB)
+│   ├── generate-brand-icons.mjs    # Brand icons (multi-size ICO included)
+│   ├── build-tauri-resources.mjs   # Builds the Rust-side i18n.json from i18n.ts
+│   ├── run-tauri-check.mjs    # Three-phase self-check runner
+│   ├── prepare-animated-pet.mjs / prepare-single-pet.mjs  # Asset normalization
+│   ├── copy-vendor.mjs        # Copies the three.js UMD build (legacy 3D path, pending removal)
 │   ├── copy-assets.mjs        # Copies html/css/assets into dist/ on build
-│   ├── run-electron.mjs       # Electron launch wrapper (clears ELECTRON_RUN_AS_NODE)
-│   └── set-custom.mjs         # CLI to set a custom appearance (image / sprite sheet / 3D model)
+│   └── set-custom.mjs         # CLI to set a custom appearance
 ├── package.json
 ├── tsconfig.json
-├── electron-builder.yml
 ├── README.md
 └── README-EN.md
 ```
 
 **Technical highlights**
 
-- Main / preload / renderer are all TypeScript, compiled to CommonJS by `tsc` (renderer files are
-  module-free single scripts to avoid ES Module CORS restrictions under `file://`).
-- Renderer ↔ main communicate only through `window.api` (IPC), with
-  `contextIsolation: true` + `sandbox: true`.
-- AI network requests are made in the **main process** to avoid browser CORS restrictions.
-- Chat data is managed centrally in the **main process** (`chat-store.ts`, persisted to
-  `userData/chat-store.json`); the pet window and the chat window stay in sync through
-  `chats-changed` broadcasts.
-- Dragging uses screen-coordinate absolute positioning (`screenX/Y` + window position) — no cumulative drift.
-- Transparent window + `backgroundThrottling: false` keeps `requestAnimationFrame` running reliably.
-- The 3D mode uses a vendored **three.js UMD (MIT)** build — no bundler needed; hit testing uses
-  `THREE.Raycaster` instead of the 2D pixel hitmap.
+- The backend is Rust (`src-tauri/`); the front end is still TypeScript + Canvas (compiled to
+  CommonJS by `tsc`, renderer files are module-free single scripts).
+- The renderer talks to Rust through the shim in `src/renderer/tauri-api.ts`, which reimplements the
+  Electron preload's `window.api` on top of `invoke` / `listen` — so `app.ts` / `settings.ts` /
+  `chat.ts` needed almost no changes.
+- AI network requests are made in **Rust** (`reqwest`): that sidesteps CORS and keeps the API key
+  out of the page.
+- Chat data is managed centrally in **Rust** (`chat-store.json`); the pet window and the chat window
+  stay in sync through `chats-changed` events.
+- **Click-through**: Tauri's `set_ignore_cursor_events` has no Electron-style `forward` option, so a
+  click-through window stops receiving `mousemove`. While click-through is on, the renderer polls the
+  cursor every 50 ms and restores interaction as soon as it re-enters the pet's pixels or the update
+  badge. Repeated polling failures fail safe by handing the clicks back to the pet.
+- Dragging records a cursor anchor in Rust and positions the window absolutely — no cumulative drift.
+- The transparent window keeps `requestAnimationFrame` running without throttling.
 
 ---
 
 ## 🧪 Known Limitations (MVP)
 
+- **The migration is not finished**: auto-update, 3D model skins and the ONNX-based local cutout are
+  not available in the Tauri build yet. The renderer still contains the leftover 3D / cutout code and
+  dependencies; they will be removed in the cleanup pass.
 - **Per-pixel click-through**: only the pet's **visible pixels** trigger interactions; clicks on
-  transparent areas pass through to the desktop (Windows switches dynamically via
-  `setIgnoreMouseEvents(forward)`; 3D mode uses raycast). macOS / Linux don't support `forward`
-  (enabling pass-through means no events are received and the pet becomes unreachable), so they
-  fall back to renderer-side hit testing — transparent areas won't trigger the pet, but clicks
-  there still don't pass through.
-- **3D mode (current stage)**: GLB only; VRM humanoid models (skeletal expressions etc.) are a
-  next-stage feature. 3D requires WebGL; after frequent 2D/3D switching, a window reload may be
-  needed to re-initialize the WebGL context.
-- **macOS transparent window**: the Dock icon is hidden; add vibrancy in `main.ts` if you want a frosted-glass effect.
+  transparent areas pass through to the desktop. Windows switches dynamically via
+  `set_ignore_cursor_events`, with the renderer's alpha hitmap plus cursor polling restoring interaction.
+- **Window opacity**: Tauri has no Electron-style `setOpacity` on Windows, so the opacity slider in
+  Settings currently does nothing; the plan is to apply it as CSS opacity in the renderer.
+- **Platform coverage**: only **Windows** has been fully exercised so far (including the self-check).
+  macOS / Linux still need real packaging and testing — especially the transparent window and the
+  click-through path, which are where platforms differ most.
 - **Unsigned packages**: Windows SmartScreen / macOS Gatekeeper will warn about the unknown developer.
 - **Built-in appearances**: gray cat / fox / rabbit / Bulu / robot; add more via the Customization Guide.
 
@@ -390,10 +422,9 @@ petric/
 
 ## 📸 Screenshots & Demo
 
-```bash
-# Auto-generate the README header images (docs/screenshots/)
-npm run build && node scripts/run-electron.mjs . --screenshot
-```
+> ⏳ The images below are still the static files generated before the migration. The Electron build
+> had a `--screenshot` self-drawing pipeline (see the `pre-tauri-0.4.0` git tag) that has not been
+> ported to Tauri yet; regenerate them with the old build, or just overwrite the files with real screenshots.
 
 - `docs/screenshots/pet-cat.png`: the pet on a (simulated) desktop — composited from the real sprite sheet
 - `docs/screenshots/settings-panel.png`: the settings panel (canvas recreation)
@@ -413,7 +444,7 @@ All contributions are welcome:
 - 🐛 Bug fixes and polish
 - 📖 Docs and demos
 
-Flow: Fork → new branch → open a PR. Make sure `npm run build` passes and include a short description.
+Flow: Fork → new branch → open a PR. Make sure `npm run build` and `npm run tauri:check` both pass, and include a short description.
 
 See [CONTRIBUTING.md](./.github/CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](./.github/CODE_OF_CONDUCT.md).
 
@@ -424,6 +455,7 @@ See [CONTRIBUTING.md](./.github/CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](./.git
 [MIT](./LICENSE) © Prismoo Contributors
 
 - The gray cat / fox / rabbit / Bulu animations were generated from project-provided references and ship with this repository; the robot is procedurally generated by the project.
-- 3D rendering uses [three.js](https://threejs.org/) (MIT, vendored into `src/assets/vendor/`).
+- The legacy 3D path uses [three.js](https://threejs.org/) (MIT, vendored into `src/assets/vendor/`);
+  it has no entry point in the Tauri build and will be removed together with the dependency.
 - If you replace them with third-party art or models, verify their license yourself
   (CC0 / MIT / OGA-BY 3.0 recommended, and credit the source in the README).

@@ -10,7 +10,7 @@ Fixes #（if any / 如果有）
 ## Checklist / 检查清单
 
 - [ ] `npm run build` passes / 已运行 `npm run build` 且通过
-- [ ] `npm run smoke` passes (exit code 0) / 已运行 `npm run smoke` 且通过（退出码 0）
+- [ ] `npm run tauri:check` passes (exit code 0) / 已运行 `npm run tauri:check` 且通过（退出码 0）
 - [ ] Code follows the existing style (TypeScript strict, prefer no new runtime deps)
   / 代码遵循项目现有风格（TypeScript strict、无新运行时依赖优先）
 - [ ] UI changes include screenshots / demos / 涉及 UI 变更时附带了截图或演示

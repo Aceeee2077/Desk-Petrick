@@ -2,7 +2,9 @@
 node_modules/
 dist/
 
-# electron-builder output. Release binaries belong in GitHub Releases, not Git.
+# Rust / Tauri build output and bundled installers.
+# Release binaries belong in GitHub Releases, not Git.
+src-tauri/target/
 release/
 *.exe
 *.msi
@@ -14,10 +16,8 @@ latest*.yml
 builder-debug.yml
 builder-effective-config.yaml
 
-# Package-manager / Electron caches and test output
+# Package-manager caches and test output
 .npm-cache/
-.electron-cache/
-.electron-builder-cache/
 coverage/
 *.log
 *.tmp
