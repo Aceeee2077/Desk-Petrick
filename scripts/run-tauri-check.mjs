@@ -40,6 +40,41 @@ const timer = setTimeout(() => {
 }, 90_000);
 
 child.on('exit', (code) => {
+  void runChecks(code);
+});
+
+/** A second launch must hand off to the running instance and exit by itself. */
+async function checkSingleInstance() {
+  const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+  const first = spawn(BIN, [], { stdio: 'ignore' });
+  try {
+    await delay(4000);
+    if (first.exitCode !== null) {
+      console.error('✗ 单实例检查：第一个实例意外退出');
+      return false;
+    }
+    const second = spawn(BIN, [], { stdio: 'ignore' });
+    for (let waited = 0; second.exitCode === null && waited < 6000; waited += 200) {
+      await delay(200);
+    }
+    const secondExited = second.exitCode !== null;
+    if (!secondExited) second.kill();
+    if (!secondExited) {
+      console.error('✗ 单实例检查：第二个实例没有自动退出');
+      return false;
+    }
+    if (first.exitCode !== null) {
+      console.error('✗ 单实例检查：第一个实例在第二个启动后消失了');
+      return false;
+    }
+    return true;
+  } finally {
+    if (first.exitCode === null) first.kill();
+    await delay(300);
+  }
+}
+
+async function runChecks(code) {
   clearTimeout(timer);
   const lines = stdout.split(/\r?\n/).filter((l) => l.startsWith('[selfcheck]'));
   if (!lines.length) {
@@ -107,6 +142,10 @@ child.on('exit', (code) => {
     console.error('✗ 聊天窗口自检未通过');
     process.exit(1);
   }
+  if (!(await checkSingleInstance())) {
+    process.exit(1);
+  }
   console.log('✓ Tauri 版自检通过：宠物渲染、设置读写、聊天会话增删改查全部正常');
+  console.log('✓ 单实例检查通过：重复启动会交给已在运行的实例');
   process.exit(code === 0 ? 0 : 1);
-});
+}

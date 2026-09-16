@@ -297,6 +297,21 @@ fn spawn_self_check(app: &AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Must be the first plugin registered: it has to exit the process before any
+        // other plugin (tray icon, windows, updater) gets a chance to set itself up.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // A second launch just surfaces the pet that is already running, which is
+            // what the Electron build's requestSingleInstanceLock() did.
+            if let Some(pet) = app.get_webview_window("pet") {
+                let _ = pet.show();
+                let _ = pet.unminimize();
+                let _ = pet.set_focus();
+            }
+            if let Some(settings) = app.get_webview_window("settings") {
+                let _ = settings.show();
+                let _ = settings.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
