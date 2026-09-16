@@ -28,6 +28,15 @@ pub fn defaults() -> Value {
         "apiKey": "",
         "apiBaseUrl": "https://api.openai.com/v1",
         "model": "gpt-4o-mini",
+        "aiProviders": [],
+        "aiProviderId": "",
+        "chatMaxTokens": 120,
+        "chatTemperature": 0.8,
+        "chatVerbosity": "normal",
+        "chatEmoji": false,
+        "chatUsageDate": "",
+        "chatUsageMessages": 0,
+        "chatUsageTokens": 0,
         "soundEnabled": true,
         "customImageMode": "single",
         "customImagePath": "",
@@ -91,10 +100,79 @@ pub fn init(app: &AppHandle) -> ConfigState {
         .unwrap_or_else(|| Value::Object(Map::new()));
     // Fill in anything the persisted file is missing (new keys, first run).
     deep_merge(&mut value, &defaults());
+    seed_provider_from_legacy(&mut value);
 
     ConfigState {
         path,
         value: Mutex::new(value),
+    }
+}
+
+/// Best-effort display label derived from a base URL host.
+fn provider_label(base_url: &str) -> String {
+    let host = base_url
+        .split("://")
+        .nth(1)
+        .unwrap_or(base_url)
+        .split('/')
+        .next()
+        .unwrap_or("");
+    if host.contains("openai") {
+        "OpenAI".to_string()
+    } else if host.contains("deepseek") {
+        "DeepSeek".to_string()
+    } else if host.contains("moonshot") {
+        "Moonshot".to_string()
+    } else if host.contains("localhost") || host.starts_with("127.") {
+        "Local".to_string()
+    } else if host.is_empty() {
+        "Default".to_string()
+    } else {
+        host.to_string()
+    }
+}
+
+/// Turn the single legacy base URL / key / model into the first saved provider, so
+/// the new provider switcher starts populated instead of empty on upgrade.
+fn seed_provider_from_legacy(value: &mut Value) {
+    let providers_empty = value
+        .get("aiProviders")
+        .and_then(|v| v.as_array())
+        .map(|list| list.is_empty())
+        .unwrap_or(true);
+    if !providers_empty {
+        return;
+    }
+
+    let base_url = value
+        .get("apiBaseUrl")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let api_key = value
+        .get("apiKey")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let model = value
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if base_url.is_empty() && api_key.is_empty() {
+        return;
+    }
+
+    let provider = json!({
+        "id": "default",
+        "name": provider_label(&base_url),
+        "baseUrl": base_url,
+        "apiKey": api_key,
+        "model": model,
+    });
+    if let Some(map) = value.as_object_mut() {
+        map.insert("aiProviders".into(), json!([provider]));
+        map.insert("aiProviderId".into(), json!("default"));
     }
 }
 

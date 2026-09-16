@@ -184,6 +184,43 @@ pub fn broadcast(app: &AppHandle, chat: &ChatState) {
     let _ = app.emit("chats-changed", chat.snapshot());
 }
 
+/// Rough token estimate: CJK characters count as one token each, everything else
+/// as a quarter. Only used when the provider does not report a usage block.
+fn estimate_tokens(text: &str) -> i64 {
+    let mut cjk = 0i64;
+    let mut other = 0i64;
+    for ch in text.chars() {
+        if ('\u{4E00}'..='\u{9FFF}').contains(&ch) {
+            cjk += 1;
+        } else {
+            other += 1;
+        }
+    }
+    (cjk + other / 4).max(1)
+}
+
+/// Bump the per-day chat usage counters. `date` is the caller's local YYYY-MM-DD, so
+/// Rust does not need a timezone database just to roll the counter over.
+fn record_usage(config: &ConfigState, date: &str, tokens: Option<i64>, reply: &str) {
+    let stored = config.get("chatUsageDate");
+    let stored = stored.as_str().unwrap_or("");
+    let (messages, total) = if stored == date {
+        (
+            config.get("chatUsageMessages").as_i64().unwrap_or(0) + 1,
+            config.get("chatUsageTokens").as_i64().unwrap_or(0),
+        )
+    } else {
+        (1, 0)
+    };
+    let spent = tokens.unwrap_or_else(|| estimate_tokens(reply));
+    config.apply(&serde_json::json!({
+        "chatUsageDate": date,
+        "chatUsageMessages": messages,
+        "chatUsageTokens": total + spent,
+    }));
+    config.persist();
+}
+
 #[tauri::command]
 pub fn chats_state(chat: State<'_, ChatState>) -> Store {
     chat.snapshot()
@@ -327,6 +364,7 @@ pub async fn chats_send(
     config: State<'_, ConfigState>,
     id: String,
     text: String,
+    date: String,
 ) -> Result<SendResult, String> {
     let trimmed = text.trim().to_string();
     if trimmed.is_empty() {
@@ -357,12 +395,7 @@ pub async fn chats_send(
             error: Some(translate(&locale, "errors.aiDisabled")),
         });
     }
-    if cfg
-        .get("apiKey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .is_empty()
-    {
+    if crate::ai::effective_provider(&cfg).1.is_empty() {
         return Ok(SendResult {
             ok: false,
             error: Some(translate(&locale, "errors.noApiKey")),
@@ -371,9 +404,11 @@ pub async fn chats_send(
 
     let history = chat.recent_messages(&id, 12);
     match crate::ai::chat(&cfg, history).await {
-        Ok(reply) => {
+        Ok(outcome) => {
+            let reply = outcome.text;
             chat.append(&id, "assistant", &reply);
             broadcast(&app, &chat);
+            record_usage(&config, &date, outcome.tokens, &reply);
             let _ = app.emit("pet:chat-reward", ());
             Ok(SendResult {
                 ok: true,

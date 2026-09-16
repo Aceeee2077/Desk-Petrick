@@ -306,6 +306,34 @@ h2 {
   accent-color: var(--accent);
 }
 
+.row select {
+  flex: 1;
+  min-width: 0;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  color: var(--input-text);
+  border-radius: 10px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+}
+
+.row select:focus {
+  border-color: var(--accent);
+}
+
+/* Native dropdown lists ignore the page palette in Chromium unless we style them. */
+.row select option {
+  background: #2a2438;
+  color: #ece7f7;
+}
+
+:root[data-theme='light'] .row select option {
+  background: #fff6ee;
+  color: #4a2c14;
+}
+
 /* ---------- Segmented Select (Skin) ---------- */
 .seg {
   display: flex;

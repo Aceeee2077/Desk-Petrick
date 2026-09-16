@@ -238,7 +238,9 @@
     chatsArchive: (id) => call<void>('chats_archive', { id }),
     chatsRename: (id, title) => call<void>('chats_rename', { id, title }),
     setActiveChat: (id) => send('chats_set_active', { id }),
-    chatsSend: (id, text) => call<ChatSendResult>('chats_send', { id, text }),
+    // The local date rides along so Rust can roll the usage counters over without a
+    // timezone database of its own.
+    chatsSend: (id, text) => call<ChatSendResult>('chats_send', { id, text, date: localDate() }),
     chatsImportLegacy: (payload) => call<boolean>('chats_import_legacy', { payload }),
     onChatsChanged: (cb) => subscribe<ChatState>('chats-changed', cb),
     onChatReward: (cb) => subscribe<void>('pet:chat-reward', () => cb()),

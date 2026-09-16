@@ -75,6 +75,13 @@ child.on('exit', (code) => {
     settings.behaviorRoundTrip &&
     settings.behaviorRestored &&
     settings.sliders >= 6 &&
+    settings.providerCount >= 1 &&
+    settings.providerActive === 'selfcheck' &&
+    settings.chatTuning === true &&
+    settings.chatTuningRestored === true &&
+    settings.providerListMatches === true &&
+    settings.configEventDelivered === true &&
+    settings.sliderFollowsConfig === true &&
     settings.updateStatus === 'unsupported' &&
     typeof settings.updateVersion === 'string' &&
     settings.updateVersion.length > 0;

@@ -5,7 +5,11 @@
 // ============================================================================
 
 function $<T extends HTMLElement>(id: string): T {
-  return document.getElementById(id) as T;
+  const el = document.getElementById(id);
+  // Fail loudly: a silent null here turns an id typo into a confusing TypeError
+  // somewhere later in init (and the rest of the panel never binds its handlers).
+  if (!el) throw new Error(`[settings] missing element #${id}`);
+  return el as unknown as T;
 }
 
 // Affinity row state (kept at module level so locale switches can re-render it)
@@ -181,6 +185,23 @@ async function initSettings() {
   const apiBaseEl = $<HTMLInputElement>('api-base');
   const apiKeyEl = $<HTMLInputElement>('api-key');
   const modelEl = $<HTMLInputElement>('model');
+  const providerSelectEl = $<HTMLSelectElement>('ai-provider');
+  const providerNameEl = $<HTMLInputElement>('provider-name');
+  const btnProviderNew = $<HTMLButtonElement>('btn-provider-new');
+  const btnProviderDelete = $<HTMLButtonElement>('btn-provider-delete');
+  const maxTokensEl = $<HTMLInputElement>('chat-max-tokens');
+  const maxTokensVal = $<HTMLSpanElement>('max-tokens-val');
+  const temperatureEl = $<HTMLInputElement>('chat-temperature');
+  const temperatureVal = $<HTMLSpanElement>('temperature-val');
+  const verbosityButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('#verbosity-seg button'),
+  );
+  const chatEmojiEl = $<HTMLInputElement>('chat-emoji');
+  const chatUsageEl = $<HTMLSpanElement>('chat-usage');
+  // Declared here (not next to the helpers below) because the initial paint calls
+  // renderAiSection() before those helper definitions run.
+  let providers: AiProvider[] = [];
+  let activeProviderId = '';
   const statusEl = $<HTMLSpanElement>('ai-status');
   const skinButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('#skin-seg button'));
   const localeButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('#locale-seg button'));
@@ -373,9 +394,7 @@ async function initSettings() {
   soundEl.checked = cfg.soundEnabled;
   autoLaunchEl.checked = cfg.autoLaunch;
   aiEnabledEl.checked = cfg.aiEnabled;
-  apiBaseEl.value = cfg.apiBaseUrl;
-  apiKeyEl.value = cfg.apiKey;
-  modelEl.value = cfg.model;
+  renderAiSection(cfg);
   focusModeEl.checked = cfg.focusMode;
   focusIntervalButtons.forEach((b) => b.classList.toggle('active', Number(b.dataset.min) === cfg.focusInterval));
   greetEnabledEl.checked = cfg.greetEnabled;
@@ -391,6 +410,98 @@ async function initSettings() {
   renderStats(cfg);
 
   // ---------- Update status / progress ----------
+  // ---------- AI providers / generation settings ----------
+  /** Local YYYY-MM-DD, used to roll the usage counters over. */
+  function localDate(): string {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${now.getFullYear()}-${month}-${day}`;
+  }
+
+  function activeProvider(): AiProvider | undefined {
+    return providers.find((p) => p.id === activeProviderId) ?? providers[0];
+  }
+
+  /** Paint the provider switcher, the active profile's fields and the chat tuning rows. */
+  function renderAiSection(cfg: AppConfig) {
+    providers = Array.isArray(cfg.aiProviders) ? cfg.aiProviders.map((p) => ({ ...p })) : [];
+    activeProviderId = cfg.aiProviderId || providers[0]?.id || '';
+    if (!providers.length) {
+      // Legacy config (or a fresh one): synthesise a profile so there is something to edit.
+      providers = [
+        {
+          id: 'default',
+          name: window.PetricI18n.t('settings.providerUntitled'),
+          baseUrl: cfg.apiBaseUrl || 'https://api.openai.com/v1',
+          apiKey: cfg.apiKey || '',
+          model: cfg.model || 'gpt-4o-mini',
+        },
+      ];
+      activeProviderId = 'default';
+    }
+
+    providerSelectEl.replaceChildren(
+      ...providers.map((p) => {
+        const option = document.createElement('option');
+        option.value = p.id;
+        option.textContent = p.name || window.PetricI18n.t('settings.providerUntitled');
+        option.selected = p.id === activeProviderId;
+        return option;
+      }),
+    );
+    const active = activeProvider();
+    providerNameEl.value = active?.name ?? '';
+    apiBaseEl.value = active?.baseUrl ?? '';
+    apiKeyEl.value = active?.apiKey ?? '';
+    modelEl.value = active?.model ?? '';
+    btnProviderDelete.disabled = providers.length <= 1;
+
+    maxTokensEl.value = String(cfg.chatMaxTokens);
+    maxTokensVal.textContent = String(cfg.chatMaxTokens);
+    temperatureEl.value = String(cfg.chatTemperature);
+    temperatureVal.textContent = cfg.chatTemperature.toFixed(1);
+    verbosityButtons.forEach((b) =>
+      b.classList.toggle('active', b.dataset.verbosity === cfg.chatVerbosity),
+    );
+    chatEmojiEl.checked = cfg.chatEmoji;
+    renderChatUsage(cfg);
+  }
+
+  /** Today's message / token counters; resets lazily when the date rolls over. */
+  function renderChatUsage(cfg: AppConfig) {
+    const today = localDate();
+    if (cfg.chatUsageDate !== today) {
+      chatUsageEl.textContent = window.PetricI18n.t('settings.chatUsageEmpty');
+      if (cfg.chatUsageMessages || cfg.chatUsageTokens) {
+        void window.api.setConfig({ chatUsageDate: today, chatUsageMessages: 0, chatUsageTokens: 0 });
+      }
+      return;
+    }
+    if (!cfg.chatUsageMessages) {
+      chatUsageEl.textContent = window.PetricI18n.t('settings.chatUsageEmpty');
+      return;
+    }
+    chatUsageEl.textContent = window.PetricI18n.t('settings.chatUsageValue', {
+      n: cfg.chatUsageMessages,
+      t: cfg.chatUsageTokens,
+    });
+  }
+
+  /** Write an edited field back into the active profile (one entry of aiProviders). */
+  function saveActiveProvider(patch: Partial<AiProvider>) {
+    const active = activeProvider();
+    if (!active) return;
+    providers = providers.map((p) => (p.id === active.id ? { ...p, ...patch } : p));
+    const option = providerSelectEl.selectedOptions[0];
+    if (option) {
+      option.textContent =
+        providers.find((p) => p.id === active.id)?.name ||
+        window.PetricI18n.t('settings.providerUntitled');
+    }
+    void window.api.setConfig({ aiProviders: providers });
+  }
+
   function renderUpdateState(s: UpdateState) {
     lastUpdateState = s;
     const t = window.PetricI18n.t;
@@ -632,10 +743,62 @@ async function initSettings() {
   });
 
   aiEnabledEl.addEventListener('change', () => window.api.setConfig({ aiEnabled: aiEnabledEl.checked }));
-  apiBaseEl.addEventListener('change', () => window.api.setConfig({ apiBaseUrl: apiBaseEl.value.trim() }));
-  apiKeyEl.addEventListener('change', () => window.api.setConfig({ apiKey: apiKeyEl.value.trim() }));
+  providerNameEl.addEventListener('change', () => saveActiveProvider({ name: providerNameEl.value.trim() }));
+  apiBaseEl.addEventListener('change', () => saveActiveProvider({ baseUrl: apiBaseEl.value.trim() }));
+  apiKeyEl.addEventListener('change', () => saveActiveProvider({ apiKey: apiKeyEl.value.trim() }));
   modelEl.addEventListener('change', () =>
-    window.api.setConfig({ model: modelEl.value.trim() || 'gpt-4o-mini' }),
+    saveActiveProvider({ model: modelEl.value.trim() || 'gpt-4o-mini' }),
+  );
+
+  providerSelectEl.addEventListener('change', async () => {
+    activeProviderId = providerSelectEl.value;
+    renderAiSection(await window.api.setConfig({ aiProviderId: activeProviderId }));
+  });
+
+  btnProviderNew.addEventListener('click', async () => {
+    const created: AiProvider = {
+      id: `p${Date.now().toString(36)}`,
+      name: window.PetricI18n.t('settings.providerUntitled'),
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: '',
+      model: 'gpt-4o-mini',
+    };
+    const cfg = await window.api.setConfig({
+      aiProviders: [...providers, created],
+      aiProviderId: created.id,
+    });
+    renderAiSection(cfg);
+  });
+
+  btnProviderDelete.addEventListener('click', async () => {
+    if (providers.length <= 1) return;
+    const remaining = providers.filter((p) => p.id !== activeProviderId);
+    const cfg = await window.api.setConfig({
+      aiProviders: remaining,
+      aiProviderId: remaining[0]?.id ?? '',
+    });
+    renderAiSection(cfg);
+  });
+
+  maxTokensEl.addEventListener('input', () => {
+    const v = Number(maxTokensEl.value);
+    maxTokensVal.textContent = String(v);
+    window.api.setConfig({ chatMaxTokens: v });
+  });
+  temperatureEl.addEventListener('input', () => {
+    const v = parseFloat(temperatureEl.value);
+    temperatureVal.textContent = v.toFixed(1);
+    window.api.setConfig({ chatTemperature: v });
+  });
+  verbosityButtons.forEach((b) => {
+    b.addEventListener('click', () => {
+      verbosityButtons.forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      window.api.setConfig({ chatVerbosity: b.dataset.verbosity as ChatVerbosity });
+    });
+  });
+  chatEmojiEl.addEventListener('change', () =>
+    window.api.setConfig({ chatEmoji: chatEmojiEl.checked }),
   );
 
   // Accessory (procedural pixel accessory for the robot sheet)
@@ -750,6 +913,7 @@ async function initSettings() {
     savedPhotoEyes = cfg.photoEyes;
     clearEyesBtn.hidden = !cfg.photoEyes;
     if (eyesImg) drawEyesPreview();
+    renderAiSection(cfg);
     renderStats(cfg);
   });
 

@@ -154,6 +154,19 @@ interface ChatSendResult {
   error?: string;
 }
 
+/** How talkative the pet should be in AI chat (injected into the persona prompt). */
+type ChatVerbosity = 'brief' | 'normal' | 'chatty';
+
+/** One saved AI provider profile: switching providers becomes a single click. */
+interface AiProvider {
+  id: string;
+  /** Display label, e.g. "OpenAI" / "DeepSeek" / "本地 Ollama" */
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
 /** Custom image query / selection result */
 interface CustomImageResult {
   ok: boolean;
@@ -187,6 +200,22 @@ interface AppConfig {
   apiBaseUrl: string;
   /** Model name, e.g. gpt-4o-mini / deepseek-chat */
   model: string;
+  /** Saved AI provider profiles (empty = use the apiBaseUrl / apiKey / model above) */
+  aiProviders: AiProvider[];
+  /** Id of the active provider profile */
+  aiProviderId: string;
+  /** Max tokens per AI reply */
+  chatMaxTokens: number;
+  /** Sampling temperature for AI replies (0 ~ 1.5) */
+  chatTemperature: number;
+  /** Reply length preference fed into the persona prompt */
+  chatVerbosity: ChatVerbosity;
+  /** Whether the pet may use emoji in AI replies */
+  chatEmoji: boolean;
+  /** Usage counters, reset whenever chatUsageDate rolls over */
+  chatUsageDate: string;
+  chatUsageMessages: number;
+  chatUsageTokens: number;
   /** Click sound toggle */
   soundEnabled: boolean;
   /** Display mode for the custom appearance: single=single image / sheet=sprite sheet / model=3D model */

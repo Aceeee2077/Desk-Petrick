@@ -128,6 +128,55 @@ const SETTINGS_CHECK_JS: &str = r#"
     out.behaviorRestored =
       restored.petScale === before.petScale && restored.snapToEdge === before.snapToEdge;
 
+    // AI provider profiles + chat tuning must persist through Rust as well.
+    const extraProvider = {
+      id: 'selfcheck',
+      name: 'SelfCheck',
+      baseUrl: 'https://example.invalid/v1',
+      apiKey: 'test-key',
+      model: 'test-model',
+    };
+    const tuned = await window.api.setConfig({
+      aiProviders: [...(before.aiProviders || []), extraProvider],
+      aiProviderId: 'selfcheck',
+      chatMaxTokens: 200,
+      chatTemperature: 1.1,
+      chatVerbosity: 'chatty',
+      chatEmoji: true,
+    });
+    out.providerCount = (tuned.aiProviders || []).length;
+    out.providerActive = tuned.aiProviderId;
+    out.chatTuning =
+      tuned.chatMaxTokens === 200 &&
+      Math.abs(tuned.chatTemperature - 1.1) < 0.001 &&
+      tuned.chatVerbosity === 'chatty' &&
+      tuned.chatEmoji === true;
+    // Wait for the config-changed broadcast, then assert the switcher really re-rendered.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    out.providerOptions = document.querySelectorAll('#ai-provider option').length;
+    // Prove the config-changed broadcast actually reaches this window.
+    let fired = 0;
+    const unlisten = await window.__TAURI__.event.listen('config-changed', () => {
+      fired++;
+    });
+    await window.api.setConfig({ chatMaxTokens: 210 });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    unlisten();
+    out.configEventDelivered = fired > 0;
+    out.sliderFollowsConfig = document.getElementById('chat-max-tokens').value === '210';
+    out.providerListMatches =
+      out.providerOptions === out.providerCount && out.providerOptions >= 1;
+    await window.api.setConfig({
+      aiProviders: before.aiProviders,
+      aiProviderId: before.aiProviderId,
+      chatMaxTokens: before.chatMaxTokens,
+      chatTemperature: before.chatTemperature,
+      chatVerbosity: before.chatVerbosity,
+      chatEmoji: before.chatEmoji,
+    });
+    out.chatTuningRestored =
+      (await window.api.getConfig()).chatVerbosity === before.chatVerbosity;
+
     // The updater is not ported yet: the panel must report a real version and say so.
     const update = await window.api.updateGetState();
     out.updateStatus = update.status;

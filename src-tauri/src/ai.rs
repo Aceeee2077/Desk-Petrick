@@ -68,6 +68,93 @@ fn affinity_tier(value: i64) -> usize {
     index
 }
 
+/// Reply-length guidance for the persona prompt.
+fn verbosity_line(locale: &str, verbosity: &str) -> &'static str {
+    if locale == "en" {
+        match verbosity {
+            "brief" => "- Keep it short: usually a single sentence.",
+            "chatty" => {
+                "- You may say a little more: 3-5 sentences, with useful background or a suggestion."
+            }
+            _ => "- Usually 2-3 short, spoken sentences that are genuinely useful. For real questions, answer helpfully and briefly — your pet persona never limits your knowledge.",
+        }
+    } else {
+        match verbosity {
+            "brief" => "- 保持简短：通常只用一句话回答。",
+            "chatty" => "- 可以多说一点：3~5 句话，适当补充背景或建议。",
+            _ => "- 通常 2~3 个短句、口语化、直接有用；回答正经问题要认真简短，你的“宠物设定”不会限制你的知识。",
+        }
+    }
+}
+
+/// Emoji preference for the persona prompt.
+fn emoji_line(locale: &str, emoji: bool) -> &'static str {
+    if locale == "en" {
+        if emoji {
+            "- A few emoji are fine when they genuinely fit."
+        } else {
+            "- Do not use emoji."
+        }
+    } else if emoji {
+        "- 可以适度使用 emoji。"
+    } else {
+        "- 不要使用 emoji。"
+    }
+}
+
+/// Resolve which provider to talk to: the active saved profile when there is one,
+/// otherwise the legacy `apiBaseUrl` / `apiKey` / `model` fields.
+pub fn effective_provider(cfg: &Value) -> (String, String, String) {
+    let legacy = || {
+        (
+            cfg.get("apiBaseUrl")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            cfg.get("apiKey")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            cfg.get("model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        )
+    };
+
+    let Some(providers) = cfg.get("aiProviders").and_then(|v| v.as_array()) else {
+        return legacy();
+    };
+    if providers.is_empty() {
+        return legacy();
+    }
+    let active_id = cfg
+        .get("aiProviderId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let Some(provider) = providers
+        .iter()
+        .find(|p| p.get("id").and_then(|v| v.as_str()) == Some(active_id))
+        .or_else(|| providers.first())
+    else {
+        return legacy();
+    };
+
+    let field = |key: &str| {
+        provider
+            .get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    let (base_url, api_key, model) = (field("baseUrl"), field("apiKey"), field("model"));
+    if base_url.is_empty() && api_key.is_empty() {
+        legacy()
+    } else {
+        (base_url, api_key, model)
+    }
+}
+
 /// Mirrors buildSystemPrompt() in the Electron main process.
 fn build_system_prompt(cfg: &Value) -> String {
     let locale = cfg.get("locale").and_then(|v| v.as_str()).unwrap_or("zh");
@@ -75,6 +162,16 @@ fn build_system_prompt(cfg: &Value) -> String {
     let affinity = cfg.get("affinity").and_then(|v| v.as_i64()).unwrap_or(0);
     let tier = persona_tier(locale, affinity_tier(affinity));
     let look = skin_name(locale, skin);
+    let verbosity = cfg
+        .get("chatVerbosity")
+        .and_then(|v| v.as_str())
+        .unwrap_or("normal");
+    let emoji = cfg
+        .get("chatEmoji")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let length = verbosity_line(locale, verbosity);
+    let emoji_rule = emoji_line(locale, emoji);
 
     if locale == "en" {
         return [
@@ -89,7 +186,8 @@ fn build_system_prompt(cfg: &Value) -> String {
             "Rules:",
             "- Reply in the language the user just wrote in: if they type Chinese, answer in Chinese; switch with them whenever they switch languages. Never translate their words.",
             "- If the message gives no clear language signal (e.g. just \"hi\", \"ok\" or an emoji), keep using the language of the latest messages in this conversation; default to English only when there is no history yet.",
-            "- Usually 2–3 short, spoken sentences that are genuinely useful. For real questions, answer helpfully and briefly — your pet persona never limits your knowledge.",
+            length,
+            emoji_rule,
             "- No polite filler, no lecturing, no pitching, no ending every message with a question.",
             "- Stay in character as Prismoo and keep your tone consistent across messages.",
         ]
@@ -108,7 +206,8 @@ fn build_system_prompt(cfg: &Value) -> String {
         "规则：",
         "- 用户这条消息用什么语言写，你就用什么语言回复：他说中文你就回中文，他写英文就回英文；他中途切换语言你也跟着切换，不要翻译他的话。",
         "- 如果这条消息看不出语言（比如只有 hi / ok / 表情），就沿用本对话最近几条消息使用的语言；完全没有历史时才默认用中文。",
-        "- 通常 2~3 个短句、口语化、直接有用；回答正经问题要认真简短，你的“宠物设定”不会限制你的知识。",
+        length,
+        emoji_rule,
         "- 不客套、不说教、不推销、不把每句话都变成提问。",
         "- 始终记住你是 Prismoo，语气和言行保持一致。",
     ]
@@ -136,40 +235,44 @@ pub async fn ai_chat(config: State<'_, ConfigState>, messages: Vec<Message>) -> 
     if cfg.get("aiEnabled").and_then(|v| v.as_bool()) != Some(true) {
         return Err(translate(&locale, "errors.aiDisabled"));
     }
-    if cfg
-        .get("apiKey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .is_empty()
-    {
+    if effective_provider(&cfg).1.is_empty() {
         return Err(translate(&locale, "errors.noApiKey"));
     }
-    chat(&cfg, messages).await
+    chat(&cfg, messages).await.map(|outcome| outcome.text)
+}
+
+/// The provider's reply plus, when reported, its token usage.
+pub struct ChatOutcome {
+    pub text: String,
+    /// Tokens reported by the provider, when it returns a usage block.
+    pub tokens: Option<i64>,
 }
 
 /// One chat completion. Errors are already localized for the UI.
-pub async fn chat(cfg: &Value, messages: Vec<Message>) -> Result<String, String> {
+pub async fn chat(cfg: &Value, messages: Vec<Message>) -> Result<ChatOutcome, String> {
     let locale = cfg
         .get("locale")
         .and_then(|v| v.as_str())
         .unwrap_or("zh")
         .to_string();
-    let api_key = cfg
-        .get("apiKey")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let model = cfg
-        .get("model")
-        .and_then(|v| v.as_str())
-        .filter(|m| !m.is_empty())
-        .unwrap_or("gpt-4o-mini")
-        .to_string();
+    let (provider_base, api_key, provider_model) = effective_provider(cfg);
+    let model = if provider_model.is_empty() {
+        "gpt-4o-mini".to_string()
+    } else {
+        provider_model
+    };
+    let max_tokens = cfg
+        .get("chatMaxTokens")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(120)
+        .clamp(40, 2000);
+    let temperature = cfg
+        .get("chatTemperature")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.8)
+        .clamp(0.0, 1.5);
 
-    let mut base = cfg
-        .get("apiBaseUrl")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
+    let mut base = provider_base
         .trim()
         .trim_end_matches('/')
         .to_string();
@@ -202,8 +305,8 @@ pub async fn chat(cfg: &Value, messages: Vec<Message>) -> Result<String, String>
         .json(&json!({
             "model": model,
             "messages": payload_messages,
-            "max_tokens": 120,
-            "temperature": 0.8,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
         }))
         .send()
         .await
@@ -238,5 +341,6 @@ pub async fn chat(cfg: &Value, messages: Vec<Message>) -> Result<String, String>
     if text.is_empty() {
         return Err(translate(&locale, "errors.noReply"));
     }
-    Ok(text)
+    let tokens = data.pointer("/usage/total_tokens").and_then(|v| v.as_i64());
+    Ok(ChatOutcome { text, tokens })
 }

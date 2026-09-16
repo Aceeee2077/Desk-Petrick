@@ -238,6 +238,19 @@
           <label class="switch"><input type="checkbox" id="ai-enabled" /><span></span></label>
         </div>
         <div class="row">
+          <label data-i18n="settings.provider">供应商</label>
+          <select id="ai-provider"></select>
+        </div>
+        <div class="row">
+          <label></label>
+          <button id="btn-provider-new" class="ghost" data-i18n="settings.providerNew">＋ 新建</button>
+          <button id="btn-provider-delete" class="ghost" data-i18n="settings.providerDelete">🗑️ 删除</button>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.providerName">名称</label>
+          <input type="text" id="provider-name" spellcheck="false" />
+        </div>
+        <div class="row">
           <label data-i18n="settings.apiBase">API Base URL</label>
           <input type="text" id="api-base" placeholder="https://api.openai.com/v1" spellcheck="false" />
         </div>
@@ -248,6 +261,30 @@
         <div class="row">
           <label data-i18n="settings.model">模型</label>
           <input type="text" id="model" placeholder="gpt-4o-mini / deepseek-chat" spellcheck="false" />
+        </div>
+        <div class="row">
+          <label><span data-i18n="settings.chatMaxTokens">回复长度上限</span> <span id="max-tokens-val" class="val">120</span></label>
+          <input type="range" id="chat-max-tokens" min="40" max="500" step="10" value="120" />
+        </div>
+        <div class="row">
+          <label><span data-i18n="settings.chatTemperature">发散程度</span> <span id="temperature-val" class="val">0.8</span></label>
+          <input type="range" id="chat-temperature" min="0" max="1.5" step="0.1" value="0.8" />
+        </div>
+        <div class="row">
+          <label data-i18n="settings.chatVerbosity">话多话少</label>
+          <div class="seg" id="verbosity-seg">
+            <button data-verbosity="brief" data-i18n="settings.verbosityBrief">简短</button>
+            <button data-verbosity="normal" class="active" data-i18n="settings.verbosityNormal">正常</button>
+            <button data-verbosity="chatty" data-i18n="settings.verbosityChatty">话痨</button>
+          </div>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.chatEmoji">允许 emoji</label>
+          <label class="switch"><input type="checkbox" id="chat-emoji" /><span></span></label>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.chatUsage">今日用量</label>
+          <span id="chat-usage" class="val">—</span>
         </div>
         <div class="row">
           <button id="btn-test-ai" class="ghost" data-i18n="settings.testAi">🧪 测试对话</button>
