@@ -165,6 +165,16 @@ async function initSettings() {
   const animSpeedVal = $<HTMLSpanElement>('anim-speed-val');
   const opacityEl = $<HTMLInputElement>('opacity');
   const opacityVal = $<HTMLSpanElement>('opacity-val');
+  const petScaleEl = $<HTMLInputElement>('pet-scale');
+  const petScaleVal = $<HTMLSpanElement>('pet-scale-val');
+  const sleepTimeoutEl = $<HTMLInputElement>('sleep-timeout');
+  const sleepTimeoutVal = $<HTMLSpanElement>('sleep-timeout-val');
+  const wanderSpeedEl = $<HTMLInputElement>('wander-speed');
+  const wanderSpeedVal = $<HTMLSpanElement>('wander-speed-val');
+  const activityRateEl = $<HTMLInputElement>('activity-rate');
+  const activityRateVal = $<HTMLSpanElement>('activity-rate-val');
+  const snapToEdgeEl = $<HTMLInputElement>('snap-to-edge');
+  const stayOnOneEl = $<HTMLInputElement>('stay-on-one');
   const soundEl = $<HTMLInputElement>('sound');
   const autoLaunchEl = $<HTMLInputElement>('autolaunch');
   const aiEnabledEl = $<HTMLInputElement>('ai-enabled');
@@ -350,6 +360,16 @@ async function initSettings() {
   animSpeedVal.textContent = cfg.animSpeed.toFixed(1) + 'x';
   opacityEl.value = String(cfg.opacity);
   opacityVal.textContent = Math.round(cfg.opacity * 100) + '%';
+  petScaleEl.value = String(cfg.petScale);
+  petScaleVal.textContent = Math.round(cfg.petScale * 100) + '%';
+  sleepTimeoutEl.value = String(cfg.sleepTimeoutSec);
+  sleepTimeoutVal.textContent = cfg.sleepTimeoutSec + 's';
+  wanderSpeedEl.value = String(cfg.wanderSpeed);
+  wanderSpeedVal.textContent = cfg.wanderSpeed.toFixed(1) + 'x';
+  activityRateEl.value = String(cfg.activityFrequency);
+  activityRateVal.textContent = cfg.activityFrequency.toFixed(1) + 'x';
+  snapToEdgeEl.checked = cfg.snapToEdge;
+  stayOnOneEl.checked = cfg.stayOnOneDisplay;
   soundEl.checked = cfg.soundEnabled;
   autoLaunchEl.checked = cfg.autoLaunch;
   aiEnabledEl.checked = cfg.aiEnabled;
@@ -403,6 +423,9 @@ async function initSettings() {
       case 'dev':
         updateStatusEl.textContent = t('settings.updateDev');
         break;
+      case 'unsupported':
+        updateStatusEl.textContent = t('settings.updateUnsupported');
+        break;
       case 'error':
         updateStatusEl.textContent = t('settings.updateError');
         updateStatusEl.title = s.error || '';
@@ -443,11 +466,18 @@ async function initSettings() {
     }
 
     btnCheckUpdate.disabled =
-      s.status === 'checking' || s.status === 'downloading' || s.status === 'dev';
+      s.status === 'checking' ||
+      s.status === 'downloading' ||
+      s.status === 'dev' ||
+      s.status === 'unsupported';
     btnDownloadUpdate.hidden = !(s.status === 'available' && !s.autoDownload && !s.manualUrl);
     btnInstallUpdate.hidden = s.status !== 'downloaded';
     btnOpenUpdate.hidden = !(
-      s.manualUrl && (s.status === 'available' || s.status === 'dev' || s.status === 'error')
+      s.manualUrl &&
+      (s.status === 'available' ||
+        s.status === 'dev' ||
+        s.status === 'error' ||
+        s.status === 'unsupported')
     );
 
     const notes = s.notes || '';
@@ -561,6 +591,37 @@ async function initSettings() {
     opacityVal.textContent = Math.round(v * 100) + '%';
     window.api.setConfig({ opacity: v });
   });
+
+  petScaleEl.addEventListener('input', () => {
+    const v = parseFloat(petScaleEl.value);
+    petScaleVal.textContent = Math.round(v * 100) + '%';
+    window.api.setConfig({ petScale: v });
+  });
+
+  sleepTimeoutEl.addEventListener('input', () => {
+    const v = Number(sleepTimeoutEl.value);
+    sleepTimeoutVal.textContent = v + 's';
+    window.api.setConfig({ sleepTimeoutSec: v });
+  });
+
+  wanderSpeedEl.addEventListener('input', () => {
+    const v = parseFloat(wanderSpeedEl.value);
+    wanderSpeedVal.textContent = v.toFixed(1) + 'x';
+    window.api.setConfig({ wanderSpeed: v });
+  });
+
+  activityRateEl.addEventListener('input', () => {
+    const v = parseFloat(activityRateEl.value);
+    activityRateVal.textContent = v.toFixed(1) + 'x';
+    window.api.setConfig({ activityFrequency: v });
+  });
+
+  snapToEdgeEl.addEventListener('change', () =>
+    window.api.setConfig({ snapToEdge: snapToEdgeEl.checked }),
+  );
+  stayOnOneEl.addEventListener('change', () =>
+    window.api.setConfig({ stayOnOneDisplay: stayOnOneEl.checked }),
+  );
 
   soundEl.addEventListener('change', () => window.api.setConfig({ soundEnabled: soundEl.checked }));
 

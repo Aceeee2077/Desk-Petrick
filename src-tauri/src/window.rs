@@ -25,20 +25,64 @@ pub struct DragAnchor {
 #[derive(Default)]
 pub struct DragState(pub Mutex<Option<DragAnchor>>);
 
-/// Keep the window fully inside the monitor it currently sits on, so the pet can
-/// never be walked or dragged off-screen.
+/// Read a boolean setting from the persisted config.
+fn config_bool(window: &WebviewWindow, key: &str, fallback: bool) -> bool {
+    window
+        .app_handle()
+        .try_state::<ConfigState>()
+        .and_then(|state| state.get(key).as_bool())
+        .unwrap_or(fallback)
+}
+
+/// Keep the window fully inside its allowed area, so the pet can never be walked or
+/// dragged off-screen. By default that area is the current monitor's work area (the
+/// taskbar is respected); with "cross monitors" enabled it becomes the bounding box
+/// of every monitor instead.
 fn clamp_to_monitor(window: &WebviewWindow, x: i32, y: i32) -> (i32, i32) {
-    let Ok(Some(monitor)) = window.current_monitor() else {
-        return (x, y);
-    };
     let Ok(size) = window.outer_size() else {
         return (x, y);
     };
-    let monitor_pos = monitor.position();
-    let monitor_size = monitor.size();
-    let max_x = (monitor_pos.x + monitor_size.width as i32 - size.width as i32).max(monitor_pos.x);
-    let max_y = (monitor_pos.y + monitor_size.height as i32 - size.height as i32).max(monitor_pos.y);
-    (x.clamp(monitor_pos.x, max_x), y.clamp(monitor_pos.y, max_y))
+
+    let stay_on_one = config_bool(window, "stayOnOneDisplay", true);
+    let bounds = if stay_on_one {
+        match window.current_monitor() {
+            Ok(Some(monitor)) => {
+                let area = monitor.work_area();
+                Some((
+                    area.position.x,
+                    area.position.y,
+                    area.size.width as i32,
+                    area.size.height as i32,
+                ))
+            }
+            _ => None,
+        }
+    } else {
+        match window.available_monitors() {
+            Ok(monitors) if !monitors.is_empty() => {
+                let mut min_x = i32::MAX;
+                let mut min_y = i32::MAX;
+                let mut max_x = i32::MIN;
+                let mut max_y = i32::MIN;
+                for monitor in monitors {
+                    let area = monitor.work_area();
+                    min_x = min_x.min(area.position.x);
+                    min_y = min_y.min(area.position.y);
+                    max_x = max_x.max(area.position.x + area.size.width as i32);
+                    max_y = max_y.max(area.position.y + area.size.height as i32);
+                }
+                Some((min_x, min_y, max_x - min_x, max_y - min_y))
+            }
+            _ => None,
+        }
+    };
+
+    let Some((bx, by, bw, bh)) = bounds else {
+        return (x, y);
+    };
+    let max_x = (bx + bw - size.width as i32).max(bx);
+    let max_y = (by + bh - size.height as i32).max(by);
+    (x.clamp(bx, max_x), y.clamp(by, max_y))
 }
 
 #[tauri::command]
@@ -115,8 +159,49 @@ pub fn drag_move(window: WebviewWindow, state: State<'_, DragState>) -> Result<(
 }
 
 #[tauri::command]
-pub fn drag_end(state: State<'_, DragState>) {
+pub fn drag_end(window: WebviewWindow, state: State<'_, DragState>) {
     *state.0.lock().unwrap() = None;
+    if config_bool(&window, "snapToEdge", false) {
+        snap_to_edge(&window);
+    }
+}
+
+/// Snap flush to the nearest work-area edge when the pet is dropped close to it.
+fn snap_to_edge(window: &WebviewWindow) {
+    const THRESHOLD: i32 = 28;
+    let Ok(position) = window.outer_position() else {
+        return;
+    };
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let Ok(Some(monitor)) = window.current_monitor() else {
+        return;
+    };
+    let area = monitor.work_area();
+    let left = area.position.x;
+    let top = area.position.y;
+    let right = area.position.x + area.size.width as i32;
+    let bottom = area.position.y + area.size.height as i32;
+    let width = size.width as i32;
+    let height = size.height as i32;
+
+    let mut x = position.x;
+    let mut y = position.y;
+    if (position.x - left).abs() <= THRESHOLD {
+        x = left;
+    } else if (right - (position.x + width)).abs() <= THRESHOLD {
+        x = right - width;
+    }
+    if (position.y - top).abs() <= THRESHOLD {
+        y = top;
+    } else if (bottom - (position.y + height)).abs() <= THRESHOLD {
+        y = bottom - height;
+    }
+
+    if x != position.x || y != position.y {
+        let _ = window.set_position(PhysicalPosition::new(x, y));
+    }
 }
 
 #[tauri::command]
@@ -248,6 +333,24 @@ pub fn autolaunch_set(app: AppHandle, enabled: bool) -> bool {
         manager.disable()
     };
     manager.is_enabled().unwrap_or(enabled)
+}
+
+/// The running app version (from Cargo.toml / tauri.conf.json).
+#[tauri::command]
+pub fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// Open the GitHub Releases page — the manual stand-in until the updater is ported.
+#[tauri::command]
+pub fn open_releases(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(
+            "https://github.com/Aceeee2077/Desk-Petrick/releases/latest",
+            None::<&str>,
+        )
+        .map_err(|e| e.to_string())
 }
 
 /// Set the pet window's opacity (0.5 - 1.0).

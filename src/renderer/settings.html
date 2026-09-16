@@ -86,8 +86,6 @@
           <div class="seg" id="custom-mode-seg">
             <button data-mode="single" class="active" data-i18n="settings.modeSingle">单张图片</button>
             <button data-mode="sheet" data-i18n="settings.modeSheet">精灵表</button>
-            <button data-mode="model" data-i18n="settings.modeModel">🧊 3D 模型</button>
-            <button data-mode="billboard" data-i18n="settings.modeBillboard">🧱 2.5D 立牌</button>
           </div>
         </div>
         <div class="row custom-row" hidden>
@@ -124,6 +122,10 @@
           <input type="range" id="opacity" min="0.5" max="1" step="0.05" value="1" />
         </div>
         <div class="row">
+          <label><span data-i18n="settings.petScale">宠物大小</span> <span id="pet-scale-val" class="val">100%</span></label>
+          <input type="range" id="pet-scale" min="0.75" max="1.5" step="0.05" value="1" />
+        </div>
+        <div class="row">
           <label data-i18n="settings.sound">点击音效</label>
           <label class="switch"><input type="checkbox" id="sound" /><span></span></label>
         </div>
@@ -139,6 +141,32 @@
         <div class="row">
           <button id="btn-reset" class="ghost" data-i18n="settings.resetPos">🎯 重置位置</button>
         </div>
+      </section>
+
+      <!-- Behavior: sleep timing, wandering pace, screen edges and multi-monitor rules -->
+      <section>
+        <h2 data-i18n="settings.behaviorSection">行为</h2>
+        <div class="row">
+          <label><span data-i18n="settings.sleepTimeout">睡眠等待</span> <span id="sleep-timeout-val" class="val">30s</span></label>
+          <input type="range" id="sleep-timeout" min="10" max="300" step="10" value="30" />
+        </div>
+        <div class="row">
+          <label><span data-i18n="settings.wanderSpeed">走动速度</span> <span id="wander-speed-val" class="val">1.0x</span></label>
+          <input type="range" id="wander-speed" min="0.5" max="2" step="0.1" value="1" />
+        </div>
+        <div class="row">
+          <label><span data-i18n="settings.activityFrequency">活跃频率</span> <span id="activity-rate-val" class="val">1.0x</span></label>
+          <input type="range" id="activity-rate" min="0.5" max="2" step="0.1" value="1" />
+        </div>
+        <div class="row">
+          <label data-i18n="settings.snapToEdge">贴边吸附</label>
+          <label class="switch"><input type="checkbox" id="snap-to-edge" /><span></span></label>
+        </div>
+        <div class="row">
+          <label data-i18n="settings.stayOnOneDisplay">只在单屏活动</label>
+          <label class="switch"><input type="checkbox" id="stay-on-one" /><span></span></label>
+        </div>
+        <p class="hint" data-i18n-html="settings.behaviorHint"></p>
       </section>
       </div>
 

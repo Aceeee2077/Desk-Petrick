@@ -71,7 +71,13 @@ child.on('exit', (code) => {
     settings.configRoundTrip &&
     settings.restored &&
     settings.autoLaunchFlag &&
-    settings.customResponds;
+    settings.customResponds &&
+    settings.behaviorRoundTrip &&
+    settings.behaviorRestored &&
+    settings.sliders >= 6 &&
+    settings.updateStatus === 'unsupported' &&
+    typeof settings.updateVersion === 'string' &&
+    settings.updateVersion.length > 0;
   const chatOk =
     chat &&
     chat.hasApi &&

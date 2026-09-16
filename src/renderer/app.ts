@@ -86,6 +86,12 @@ let config: AppConfig = {
   hourlyChime: true,
   photoEyes: null,
   autoMove: true,
+  petScale: 1,
+  stayOnOneDisplay: true,
+  snapToEdge: false,
+  sleepTimeoutSec: 30,
+  wanderSpeed: 1,
+  activityFrequency: 1,
   updateAutoCheck: true,
   updateAutoDownload: true,
   updateChannel: 'stable',
@@ -106,7 +112,21 @@ let frameAcc = 0;
 let justWrapped = false;
 
 let lastActivity = Date.now();
-const SLEEP_MS = 30_000; // sleeps after 30s of inactivity
+/** Sleep timeout in ms, driven by config.sleepTimeoutSec (default 30s). */
+function sleepMs(): number {
+  const sec = Number(config.sleepTimeoutSec);
+  return (Number.isFinite(sec) ? Math.min(300, Math.max(10, sec)) : 30) * 1000;
+}
+/** Multiplier for how often autonomous activity is scheduled (higher = livelier). */
+function activityFactor(): number {
+  const factor = Number(config.activityFrequency);
+  return Number.isFinite(factor) ? Math.min(2, Math.max(0.5, factor)) : 1;
+}
+/** On-screen size multiplier for the pet art. */
+function petScale(): number {
+  const scale = Number(config.petScale);
+  return Number.isFinite(scale) ? Math.min(1.5, Math.max(0.75, scale)) : 1;
+}
 
 let dragging = false;
 let dragCandidate = false;
@@ -337,7 +357,9 @@ function endAutoMove() {
 /** Walk (run=false) or run (run=true) in a random direction for a short while. */
 function startWanderActivity(run: boolean) {
   const dir = Math.random() < 0.5 ? -1 : 1;
-  const speed = run ? 170 + Math.random() * 90 : 70 + Math.random() * 60;
+  const boost = Number(config.wanderSpeed);
+  const speedScale = Number.isFinite(boost) ? Math.min(2, Math.max(0.5, boost)) : 1;
+  const speed = (run ? 170 + Math.random() * 90 : 70 + Math.random() * 60) * speedScale;
   const duration = run ? 900 + Math.random() * 1300 : 1600 + Math.random() * 2400;
   // Running pets often start with a little hop for extra life
   if (run && Math.random() < 0.6) window.api.autoJump(12, 320);
@@ -364,7 +386,7 @@ function pickAutoActivity() {
   } else if (roll < 0.86) {
     // a familiar idle action (yawn / stretch / scratch / dance)
     currentAction = { type: ACTION_TYPES[Math.floor(Math.random() * ACTION_TYPES.length)], t0: Date.now() };
-    nextActionAt = Date.now() + 8000 + Math.random() * 10000;
+    nextActionAt = Date.now() + (8000 + Math.random() * 10000) / activityFactor();
   }
   // otherwise: rest until the next scheduled activity
 }
@@ -714,7 +736,7 @@ function update(dt: number) {
   // enabled the pet stays awake and keeps wandering instead of sleeping.
   if (
     !config.autoMove &&
-    now - lastActivity > SLEEP_MS &&
+    now - lastActivity > sleepMs() &&
     state !== 'sleeping' &&
     !dragging
   ) {
@@ -729,7 +751,7 @@ function update(dt: number) {
   if (!IS_SMOKE && state === 'idle' && !dragging) {
     if (config.autoMove) {
       if (!currentAction && !autoMoveIntent && now >= nextWanderAt) {
-        nextWanderAt = now + 4000 + Math.random() * 6000;
+        nextWanderAt = now + (4000 + Math.random() * 6000) / activityFactor();
         pickAutoActivity();
       }
     } else if (!currentAction && now >= nextActionAt) {
@@ -737,7 +759,7 @@ function update(dt: number) {
     }
     if (currentAction && now - currentAction.t0 >= ACTION_DURATION[currentAction.type] * 1000) {
       currentAction = null;
-      nextActionAt = now + 6000 + Math.random() * 10000;
+      nextActionAt = now + (6000 + Math.random() * 10000) / activityFactor();
     }
   }
 
@@ -1024,6 +1046,11 @@ function drawBuiltInPet() {
     const ILLUSTRATED_MAX_PX = 256;
     let scale = illustrated ? (frameW <= 64 ? 2 : 1) : SHEET.scale;
     if (illustrated && frameW * scale > ILLUSTRATED_MAX_PX) scale = ILLUSTRATED_MAX_PX / frameW;
+    // User-chosen on-screen size. Cap it so an oversized sprite can never be clipped
+    // by the 300×300 window (the art is bottom-anchored, so height is what matters).
+    scale *= petScale();
+    if (frameH * scale > 292) scale = 292 / frameH;
+    if (frameW * scale > 296) scale = 296 / frameW;
     const dw = frameW * scale;
     const dh = frameH * scale;
     const dx = 150 - dw / 2;
@@ -1070,15 +1097,15 @@ function drawCustomPet() {
     const meta = SHEET.states[state];
     const sx = frameIndex * cs.frameW;
     const sy = meta.row * cs.frameH;
-    const dw = cs.frameW * cs.scale;
-    const dh = cs.frameH * cs.scale;
+    const dw = cs.frameW * cs.scale * petScale();
+    const dh = cs.frameH * cs.scale * petScale();
     const dx = 150 - dw / 2;
     const dy = 300 - dh - 4;
     ctx.imageSmoothingEnabled = false; // pixel art
     ctx.drawImage(cs.img, sx, sy, cs.frameW, cs.frameH, dx, dy, dw, dh);
     currentPetTop = dy;
   } else {
-    drawSingleImagePet(cs.img, 140, 120, true); // photo pets get the eye overlay
+    drawSingleImagePet(cs.img, 140 * petScale(), 120 * petScale(), true); // photo pets get the eye overlay
   }
 
   ctx.restore();
@@ -1866,12 +1893,37 @@ function applyTheme() {
   if (v) zzzRgb = v;
 }
 
+/**
+ * Window opacity. Tauri has no per-window alpha on Windows (Electron's
+ * `setOpacity` is not available), so the whole window content — canvas, bubble and
+ * badges — is faded with CSS instead. Nothing on the page is interactive-transparent,
+ * so this is a faithful stand-in.
+ */
+function applyWindowOpacity() {
+  const value = Number(config.opacity);
+  const clamped = Number.isFinite(value) ? Math.min(1, Math.max(0.5, value)) : 1;
+  document.body.style.opacity = String(clamped);
+}
+
+/** Companion-day bookkeeping: first launch date + every distinct launch day. */
+function recordLaunchStats() {
+  const today = todayStr();
+  const days = Array.isArray(config.statsDays) ? config.statsDays.slice() : [];
+  if (days.includes(today)) return;
+  days.push(today);
+  void window.api.setConfig({
+    statsFirstSeen: config.statsFirstSeen || today,
+    statsDays: days.slice(-366), // keep at most a year of dates
+  });
+}
+
 function applyConfig(cfg: AppConfig) {
   const skinChanged = cfg.skin !== config.skin;
   const localeChanged = cfg.locale !== config.locale;
   const cutoutChanged = cfg.autoCutout !== config.autoCutout || cfg.cutoutTolerance !== config.cutoutTolerance;
   config = cfg;
   applyTheme();
+  applyWindowOpacity();
   if (localeChanged) {
     void applyLocaleTexts();
   }
@@ -1932,6 +1984,7 @@ async function initPet() {
   void migrateLegacyChats(); // move the old localStorage chat data into the main store once
   const cfg = await window.api.getConfig();
   applyConfig(cfg);
+  recordLaunchStats(); // companion days (was main-process bookkeeping in the Electron build)
   await applyLocaleTexts();
 
   loadSheets();

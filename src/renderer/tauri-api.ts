@@ -166,12 +166,24 @@
   }
 
   // ---------- Not ported yet (graceful defaults) ----------
-  const updateDevState = (): UpdateState => ({
-    status: 'dev',
-    currentVersion: '',
-    autoCheck: true,
-    autoDownload: true,
+  const RELEASES_URL = 'https://github.com/Aceeee2077/Desk-Petrick/releases/latest';
+
+  // The updater plugin is not wired up yet, so the update panel reports the running
+  // version and points at the Releases page instead of pretending a check happened.
+  let cachedVersion = '';
+  const appVersion = async (): Promise<string> => {
+    if (!cachedVersion) {
+      cachedVersion = await call<string>('app_version').catch(() => '');
+    }
+    return cachedVersion;
+  };
+  const updateUnsupportedState = async (): Promise<UpdateState> => ({
+    status: 'unsupported',
+    currentVersion: await appVersion(),
+    autoCheck: false,
+    autoDownload: false,
     channel: 'stable',
+    manualUrl: RELEASES_URL,
   });
 
   const api: PetApi = {
@@ -211,12 +223,12 @@
     autoLaunchSet: (enabled) => call<boolean>('autolaunch_set', { enabled }),
 
     // ---- Updates (tauri-plugin-updater lands in a later step) ----
-    updateGetState: () => Promise.resolve(updateDevState()),
-    updateCheck: () => Promise.resolve(updateDevState()),
-    updateDownload: () => Promise.resolve(updateDevState()),
+    updateGetState: () => updateUnsupportedState(),
+    updateCheck: () => updateUnsupportedState(),
+    updateDownload: () => updateUnsupportedState(),
     updateInstall: () => Promise.resolve(),
-    updateInstallWhenReady: () => Promise.resolve(updateDevState()),
-    updateOpenPage: () => Promise.resolve(),
+    updateInstallWhenReady: () => updateUnsupportedState(),
+    updateOpenPage: () => call<void>('open_releases'),
     onUpdateState: (cb) => subscribe<UpdateState>('update-state', cb),
 
     // ---- Chat store ----

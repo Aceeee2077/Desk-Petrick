@@ -5,6 +5,9 @@
 // used; it talks to this process through a `window.api` compatibility shim
 // (src/renderer/tauri-api.ts) instead of Electron's preload/IPC bridge.
 // ============================================================================
+// The config defaults are a single large `json!` literal, which needs more macro
+// recursion headroom than the default 128 once the schema grows.
+#![recursion_limit = "512"]
 
 mod ai;
 mod chat;
@@ -100,6 +103,35 @@ const SETTINGS_CHECK_JS: &str = r#"
     // Auto-launch and custom appearance are local, so they must answer immediately.
     out.autoLaunchFlag = typeof (await window.api.autoLaunchGet()) === 'boolean';
     out.customResponds = typeof (await window.api.getCustomImage()).ok === 'boolean';
+    out.sliders = document.querySelectorAll('input[type=range]').length;
+
+    // New behavior settings must persist through Rust and read back unchanged.
+    const petTarget = before.petScale === 1 ? 1.25 : 1;
+    const patched = await window.api.setConfig({
+      petScale: petTarget,
+      sleepTimeoutSec: 45,
+      snapToEdge: true,
+      stayOnOneDisplay: false,
+    });
+    out.behaviorRoundTrip =
+      patched.petScale === petTarget &&
+      patched.sleepTimeoutSec === 45 &&
+      patched.snapToEdge === true &&
+      patched.stayOnOneDisplay === false;
+    await window.api.setConfig({
+      petScale: before.petScale,
+      sleepTimeoutSec: before.sleepTimeoutSec,
+      snapToEdge: before.snapToEdge,
+      stayOnOneDisplay: before.stayOnOneDisplay,
+    });
+    const restored = await window.api.getConfig();
+    out.behaviorRestored =
+      restored.petScale === before.petScale && restored.snapToEdge === before.snapToEdge;
+
+    // The updater is not ported yet: the panel must report a real version and say so.
+    const update = await window.api.updateGetState();
+    out.updateStatus = update.status;
+    out.updateVersion = update.currentVersion;
 
     // Weather depends on two public APIs; record it without failing the check.
     const weather = await Promise.race([
@@ -271,6 +303,8 @@ pub fn run() {
             custom::custom_clear,
             window::autolaunch_get,
             window::autolaunch_set,
+            window::app_version,
+            window::open_releases,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Prismoo");

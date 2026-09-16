@@ -28,6 +28,8 @@ type UpdateStatus =
   | 'downloaded'
   | 'up-to-date'
   | 'error'
+  /** Updates are not wired up in this build yet (Tauri migration) */
+  | 'unsupported'
   | 'dev';
 
 /** One download-progress snapshot (electron-updater ProgressInfo) */
@@ -229,6 +231,18 @@ interface AppConfig {
   /** Autonomous movement: the pet walks / runs / jumps around the desktop on its own
    *  (stays awake instead of auto-sleeping while enabled) */
   autoMove: boolean;
+  /** On-screen size multiplier for the pet art (0.75 ~ 1.5). The window itself stays 300×300. */
+  petScale: number;
+  /** Keep the pet on the display it currently sits on (off = allow it to cross monitors) */
+  stayOnOneDisplay: boolean;
+  /** Snap flush to the nearest screen edge when a drag ends */
+  snapToEdge: boolean;
+  /** Seconds of inactivity before the pet falls asleep (10 ~ 300) */
+  sleepTimeoutSec: number;
+  /** Speed multiplier for autonomous walking / running (0.5 ~ 2) */
+  wanderSpeed: number;
+  /** How often idle actions and wandering happen (0.5 ~ 2, higher = livelier) */
+  activityFrequency: number;
   /** Update: check for new GitHub Releases shortly after startup (packaged builds) */
   updateAutoCheck: boolean;
   /** Update: download a found release automatically in the background */
