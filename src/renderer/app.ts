@@ -294,9 +294,6 @@ function computeActionFx(): {
   eyesClosed: boolean;
 } | null {
   if (!currentAction || state !== 'idle') return null;
-  // 3D modes render on their own WebGL canvas, so the 2D action transform can't apply.
-  // 2D custom images (single / sheet) DO get the actions (dance / stretch / tilt…).
-  if (pet3dActive && pet3d) return null;
   const t = (performance.now() - currentAction.t0) / 1000;
   const T = ACTION_DURATION[currentAction.type];
   const p = Math.min(1, t / T);
@@ -509,20 +506,6 @@ function chime() {
   scheduleChime();
 }
 
-// ---------- 3D Model Mode (customImageMode === 'model') ----------
-// window.Petric3D is provided by pet3d.js (vendored three.js). Null when unavailable.
-let pet3d: Petric3DHandle | null = null;
-let pet3dActive = false; // true when the current skin is a custom 3D model
-
-function initPet3D(): Petric3DHandle | null {
-  const w = window as unknown as { Petric3D?: Petric3DHandle };
-  if (!w.Petric3D) return null;
-  const el = document.getElementById('pet3d-canvas') as HTMLCanvasElement | null;
-  if (!el) return null;
-  const ok = w.Petric3D.init(el);
-  return ok ? w.Petric3D : null;
-}
-
 // ---------- Per-pixel Hit Detection (2D) ----------
 // Each frame the main canvas is downscaled onto a low-res hitCanvas; mousemove reads just 1 pixel to check
 // whether the cursor is over the pet (opaque pixels). Transparent areas -> clicks pass through to the desktop (Windows).
@@ -566,7 +549,6 @@ function ensureHitMap(force: boolean) {
 
 /** Whether the cursor (window coordinates) falls on the pet (2D pixel hitmap or 3D raycast) */
 function isOverPet(clientX: number, clientY: number, forceHitMap = false): boolean {
-  if (pet3dActive && pet3d) return pet3d.isOver(clientX, clientY);
   // Coarse bounding-box early-out: the pet never reaches the far corners of the window.
   // Sized for the largest illustrated sheet (a 192px stage, centred) with margin.
   if (clientX < 36 || clientX > 264 || clientY < 88) return false;
@@ -1002,10 +984,7 @@ function draw() {
     ctx.translate(-150, -292);
   }
 
-  if (pet3dActive && pet3d) {
-    // 3D mode: the model lives on its own canvas (pet3d-canvas); only the shadow + Zzz stay on the 2D canvas
-    currentPetTop = 172; // approximate model top for Zzz particles
-  } else if (isCustom && customSprite) {
+  if (isCustom && customSprite) {
     drawCustomPet();
   } else {
     drawBuiltInPet();
@@ -1036,8 +1015,8 @@ function draw() {
   }
 
   // Mark the per-pixel hit map stale; it is rebuilt lazily on the next cursor move
-  // / click instead of every animation frame (3D mode uses raycast and skips this).
-  if (!(pet3dActive && pet3d)) hitMapDirty = true;
+  // / click instead of every animation frame.
+  hitMapDirty = true;
 }
 
 /** Draw a built-in pixel sprite sheet (four illustrated animals or robot). */
@@ -1347,11 +1326,9 @@ function cutoutBackground(dataUrl: string): Promise<string> {
   });
 }
 
-/** Load / refresh the custom appearance (gets a pet-custom:// URL from the main process) */
+/** Load / refresh the custom appearance (an asset: URL resolved by Rust) */
 async function refreshCustomSprite() {
   customSprite = null;
-  pet3dActive = false;
-  if (pet3d) pet3d.setVisible(false);
 
   if (config.skin !== 'custom') return;
 
@@ -1363,34 +1340,14 @@ async function refreshCustomSprite() {
     return;
   }
 
-  // Auto cutout applies to flat image modes (single / billboard), not sheets or 3D models
-  const canCutout =
-    config.autoCutout && !res.cutoutApplied && (res.mode === 'single' || res.mode === 'billboard');
+  // The renderer's tolerance cutout applies to single images, not to sprite sheets.
+  const canCutout = config.autoCutout && !res.cutoutApplied && res.mode !== 'sheet';
   const dataUrl = canCutout ? await cutoutBackground(res.url) : res.url;
 
-  if (res.mode === 'model' || res.mode === 'billboard') {
-    // 3D scene modes: 'model' = GLB mesh, 'billboard' = 2.5D image plane
-    if (!pet3d) pet3d = initPet3D();
-    if (!pet3d) {
-      showBubble(window.PetricI18n.t('bubble.no3d'), { ms: 4000 });
-      window.api.setConfig({ skin: 'cat' });
-      return;
-    }
-    const ok =
-      res.mode === 'billboard' ? await pet3d.loadBillboard(dataUrl) : await pet3d.loadModel(dataUrl);
-    if (!ok) {
-      showBubble(window.PetricI18n.t('bubble.modelLoadFail'), { ms: 4000 });
-      window.api.setConfig({ skin: 'cat' });
-      return;
-    }
-    pet3dActive = true;
-    pet3d.setVisible(true);
-  } else {
-    customSprite = await buildCustomSprite(dataUrl, res.mode || 'single');
-    if (!customSprite) {
-      showBubble(window.PetricI18n.t('bubble.imageLoadFail'), { ms: 4000 });
-      window.api.setConfig({ skin: 'cat' });
-    }
+  customSprite = await buildCustomSprite(dataUrl, res.mode || 'single');
+  if (!customSprite) {
+    showBubble(window.PetricI18n.t('bubble.imageLoadFail'), { ms: 4000 });
+    window.api.setConfig({ skin: 'cat' });
   }
 }
 
@@ -1442,13 +1399,6 @@ function loop(now: number) {
   const dt = Math.min((now - lastTime) / 1000, 0.1); // clamp to avoid huge jumps after backgrounding
   lastTime = now;
   update(dt);
-  // Drive the 3D scene (GLB model or 2.5D billboard) when a 3D mode is active
-  if (pet3dActive && pet3d) {
-    const dragVelX = dragging ? (mouse.x - lastMouseX) / Math.max(dt, 0.001) : 0;
-    pet3d.setPointer(mouse.x, dragging, dragVelX);
-    pet3d.update(dt, state, frameIndex);
-    pet3d.render();
-  }
   lastMouseX = mouse.x;
   draw();
 
@@ -1469,11 +1419,6 @@ function sleepTick() {
     return;
   }
   update(0.5); // advances the 2 fps sleep frames + floating Zzz
-  if (pet3dActive && pet3d) {
-    pet3d.setPointer(mouse.x, dragging, 0);
-    pet3d.update(0.5, state, frameIndex);
-    pet3d.render();
-  }
   draw();
   window.clearTimeout(sleepTickTimer);
   sleepTickTimer = window.setTimeout(sleepTick, 500);

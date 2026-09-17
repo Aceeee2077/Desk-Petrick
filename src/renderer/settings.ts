@@ -645,9 +645,7 @@ async function initSettings() {
         customImageMode: selectedCustomMode(),
         photoEyes: null, // a new photo invalidates the old eye marks
       });
-      customStatusEl.textContent = window.PetricI18n.t(
-        r.cutoutApplied ? 'settings.cutoutApplied' : 'settings.applied',
-      );
+      customStatusEl.textContent = window.PetricI18n.t('settings.applied');
       savedPhotoEyes = null;
       clearEyesBtn.hidden = true;
     } else {

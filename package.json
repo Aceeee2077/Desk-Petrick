@@ -1,46 +1,30 @@
 {
   "name": "prismoo",
-  "version": "0.4.0",
-  "description": "Prismoo · 跨平台透明桌面宠物 / Cross-platform desktop pet (Electron + TypeScript + HTML5 Canvas)",
-  "main": "dist/main/main.js",
+  "version": "0.5.0",
+  "description": "Prismoo · 跨平台透明桌面宠物 / Cross-platform desktop pet (Tauri 2 + Rust + TypeScript + Canvas)",
   "author": "Prismoo Contributors",
   "license": "MIT",
   "private": true,
   "scripts": {
     "sprites": "node scripts/generate-sprites.mjs",
     "brand-icons": "node scripts/generate-brand-icons.mjs",
-    "vendor": "node scripts/copy-vendor.mjs",
-    "models": "node scripts/make-test-model.mjs",
-    "build": "npm run sprites && npm run brand-icons && npm run vendor && npm run models && tsc && node scripts/copy-assets.mjs && npm run tauri:resources",
+    "clean": "node scripts/clean-dist.mjs",
+    "build": "npm run clean && npm run sprites && npm run brand-icons && tsc && node scripts/copy-assets.mjs && npm run tauri:resources",
     "tauri:resources": "node scripts/build-tauri-resources.mjs",
     "tauri:build": "cargo build --manifest-path src-tauri/Cargo.toml",
     "tauri:build:release": "cargo build --release --manifest-path src-tauri/Cargo.toml",
     "tauri:check": "npm run tauri:build && node scripts/run-tauri-check.mjs",
-    "dev": "npm run build && node scripts/run-electron.mjs .",
-    "start": "node scripts/run-electron.mjs .",
-    "smoke": "npm run build && node scripts/run-electron.mjs . --smoke",
     "typecheck": "tsc --noEmit",
     "set-custom": "node scripts/set-custom.mjs",
     "verify-comments": "node scripts/verify-comments.mjs",
-    "dist": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist:mac": "npm run build && electron-builder --mac",
-    "dist:linux": "npm run build && electron-builder --linux",
-    "dist:release": "npm run build && electron-builder --publish always",
-    "release": "node scripts/release.mjs"
+    "dist": "tauri build",
+    "dist:win": "tauri build --bundles nsis",
+    "dist:mac": "tauri build --bundles dmg,app",
+    "dist:linux": "tauri build --bundles appimage,deb"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
-    "@types/node": "^20.14.0",
-    "@types/three": "^0.147.0",
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8",
-    "typescript": "^5.6.3"
-  },
-  "dependencies": {
-    "electron-updater": "^6.3.9",
-    "onnxruntime-node": "^1.29.0",
     "sharp": "^0.34.5",
-    "three": "^0.147.0"
+    "typescript": "^5.6.3"
   }
 }

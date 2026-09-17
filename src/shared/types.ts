@@ -75,7 +75,7 @@ interface AffinityPoint {
 }
 
 /** Display mode for the custom appearance (image or 3D model) */
-type CustomImageMode = 'single' | 'sheet' | 'model' | 'billboard';
+type CustomImageMode = 'single' | 'sheet';
 
 /** Animation state */
 type PetState = 'idle' | 'walking' | 'sleeping' | 'click';
@@ -98,26 +98,6 @@ interface PetricI18n {
   /** Set the active locale + dictionary (provided by the main process via IPC). */
   setLocaleData(locale: Locale, dict: Record<string, I18nValue>): void;
   getLocale(): Locale;
-}
-
-/** 3D pet renderer handle exposed by pet3d.js (window.Petric3D), used when customImageMode is 'model' or 'billboard' */
-interface Petric3DHandle {
-  init(canvas: HTMLCanvasElement): boolean;
-  /** Load a GLB model from a pet-custom:// or data URL. Resolves true on success. */
-  loadModel(resourceUrl: string): Promise<boolean>;
-  /** Load a single 2D image as a billboard plane (2.5D). Resolves true on success. */
-  loadBillboard(resourceUrl: string): Promise<boolean>;
-  /** Feed pointer state each frame: cursor x (window coords), dragging flag, drag x-velocity. */
-  setPointer(pointerX: number, dragging: boolean, dragVelX: number): void;
-  /** Advance the procedural animation (dt in seconds). */
-  update(dt: number, state: PetState, frameIndex: number): void;
-  render(): void;
-  /** Raycast hit test in window coordinates (0..300). */
-  isOver(clientX: number, clientY: number): boolean;
-  setVisible(v: boolean): void;
-  /** Test hook: render a frame and count non-transparent pixels. */
-  debugPixelCount(): number;
-  dispose(): void;
 }
 
 /** AI chat role */

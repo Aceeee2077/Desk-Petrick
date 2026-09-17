@@ -20,7 +20,7 @@
 ## 📥 下载
 
 普通用户请前往 [GitHub Releases](https://github.com/Aceeee2077/Desk-Petrick/releases/latest)
-下载最新的 `Prismoo_x.y.z_x64-setup.exe` 安装包（约 8.6 MB）。
+下载最新的 `Prismoo_x.y.z_x64-setup.exe` 安装包（约 2 MB）。
 
 也可以自行构建：见下方「打包与分发」，一条 `npx tauri build` 即可产出安装包。
 
@@ -147,7 +147,7 @@ npx tauri build     # 打包当前平台
 src-tauri/target/release/bundle/nsis/Prismoo_0.5.0_x64-setup.exe
 ```
 
-体积参考：安装包约 **8.6 MB**，可执行文件约 **11.3 MB**（迁移前的 Electron 版分别是 140 MB / 188 MB）。
+体积参考：安装包约 **2.05 MB**，可执行文件约 **4.84 MB**（迁移前的 Electron 版分别是 140 MB / 188 MB）。
 
 > ⚠️ 平台说明：
 > - Tauri 使用系统自带的 WebView（Windows 为 WebView2），**不需要**把浏览器内核打进包里，这是体积大幅缩小的原因。
@@ -338,7 +338,6 @@ prismoo/
 │   │   ├── app.ts             # Canvas 绘制、动画状态机、拖拽、交互与聊天好感奖励
 │   │   ├── chat.html / chat.css / chat.ts              # ChatGPT 风格对话窗口
 │   │   ├── settings.html / settings.css / settings.ts  # 设置面板
-│   │   └── pet3d.ts           # 旧 3D 渲染（待清理，Tauri 版已无入口）
 │   ├── shared/
 │   │   ├── types.ts           # 全局共享类型（前后端通用，无运行时）
 │   │   └── i18n.ts            # 中英文 UI 字符串字典（单一来源）
@@ -353,7 +352,7 @@ prismoo/
 │   ├── build-tauri-resources.mjs  # 由 i18n.ts 生成 Rust 侧 i18n.json
 │   ├── run-tauri-check.mjs    # 三阶段自检运行器
 │   ├── prepare-animated-pet.mjs / prepare-single-pet.mjs  # 素材标准化
-│   ├── copy-vendor.mjs        # 拷贝 three.js UMD（旧 3D 路径，待清理）
+│   ├── clean-dist.mjs         # 构建前清空 dist/，避免旧资源残留被打包
 │   ├── copy-assets.mjs        # 构建时拷贝 html/css/assets 到 dist/
 │   └── set-custom.mjs         # 命令行设置自定义外观
 ├── package.json
@@ -379,8 +378,8 @@ prismoo/
 
 ## 🧪 已知限制（MVP）
 
-- **迁移尚未全部完成**：自动更新、3D 模型皮肤、基于 ONNX 的本地自动抠图这三项在 Tauri 版还没提供；
-  渲染层里仍留有 3D / 抠图的代码与依赖，会在后续清理中移除。
+- **迁移尚未全部完成**：自动更新尚未接入（见上文）。3D 模型皮肤与基于 ONNX 的本地自动抠图已按计划
+  从代码库中彻底移除，相关依赖与资源也已清理干净。
 - **点击穿透（逐像素命中）**：只有光标落在宠物的**可见像素**上才会触发交互；透明区域点击直接穿透到桌面。
   Windows 上通过 `set_ignore_cursor_events` 动态切换，由渲染层的 alpha 命中图 + 光标轮询负责恢复交互。
 - **窗口不透明度**：Tauri 在 Windows 上没有 Electron 的 `setOpacity`，设置面板里的透明度滑块目前不生效；
@@ -425,6 +424,4 @@ prismoo/
 [MIT](./LICENSE) © Prismoo Contributors
 
 - 灰猫 / 狐狸 / 兔子 / 布噜动画素材基于项目提供的参考图生成并随仓库分发；机器人由本项目程序化生成。
-- 旧 3D 路径使用 [three.js](https://threejs.org/)（MIT，已本地化到 `src/assets/vendor/`）；该路径在
-  Tauri 版已无入口，待清理时连同依赖一并移除。
 - 若替换第三方精灵图或 3D 模型，请自行确认其许可证（推荐 CC0 / MIT / OGA-BY 3.0 并在 README 注明来源）。

@@ -4,15 +4,12 @@
   <meta charset="UTF-8" />
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: pet-custom:; script-src 'self'; connect-src 'self' data: pet-custom:; worker-src 'self' blob:"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; script-src 'self'; connect-src 'self' data: asset: http://asset.localhost; worker-src 'self' blob:"
   />
   <title>Prismoo</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <!-- 3D model canvas (behind the 2D canvas; only used in custom 3D model mode) -->
-  <canvas id="pet3d-canvas" width="300" height="300"></canvas>
-
   <!-- 300x300 transparent 2D canvas: sprite animation + eye tracking + Zzz / shadow -->
   <canvas id="pet-canvas" width="300" height="300"></canvas>
 
@@ -28,12 +25,8 @@
     <span class="glyph">⬆</span>
   </button>
 
-  <!-- Vendored three.js UMD build (MIT) + GLTFLoader, then app scripts -->
-  <script src="../assets/vendor/three.min.js"></script>
-  <script src="../assets/vendor/GLTFLoader.js"></script>
   <script src="./tauri-api.js"></script>
   <script src="./i18n.js"></script>
-  <script src="./pet3d.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
