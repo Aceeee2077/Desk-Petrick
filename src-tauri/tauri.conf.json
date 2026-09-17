@@ -37,6 +37,7 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "Prismoo",
     "targets": ["nsis"],
     "icon": ["icons/icon.ico", "icons/icon.png"]
   }
