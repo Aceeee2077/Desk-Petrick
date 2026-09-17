@@ -74,6 +74,21 @@ async function checkSingleInstance() {
   }
 }
 
+/** The pet must be fully inside a monitor's work area — an off-screen pet is unusable. */
+function petInWorkArea(pet) {
+  const monitor = pet.monitors?.monitors?.[0];
+  const position = pet.windowPosition;
+  const size = pet.monitors?.windowSize;
+  if (!monitor || !position || !size) return false;
+  const [wx, wy, ww, wh] = monitor.work;
+  return (
+    position[0] >= wx &&
+    position[1] >= wy &&
+    position[0] + size[0] <= wx + ww &&
+    position[1] + size[1] <= wy + wh
+  );
+}
+
 async function runChecks(code) {
   clearTimeout(timer);
   const lines = stdout.split(/\r?\n/).filter((l) => l.startsWith('[selfcheck]'));
@@ -98,7 +113,9 @@ async function runChecks(code) {
     typeof pet.skin === 'string' &&
     pet.drawnPixels > 0 &&
     pet.hitTestOverPet === true &&
-    pet.hitTestCorner === false;
+    pet.hitTestCorner === false &&
+    pet.ipcStillResponsive === true &&
+    petInWorkArea(pet);
   const settingsOk =
     settings &&
     settings.hasApi &&

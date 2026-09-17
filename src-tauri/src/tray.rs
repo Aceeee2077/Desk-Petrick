@@ -41,10 +41,16 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 fn handle_menu(app: &AppHandle, id: &str) {
     match id {
         "chat" => {
-            let _ = crate::window::open_chat(app.clone());
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = crate::window::open_chat(app).await;
+            });
         }
         "settings" => {
-            let _ = crate::window::open_settings(app.clone());
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = crate::window::open_settings(app).await;
+            });
         }
         "reset" => crate::window::center_pet(app),
         "quit" => app.exit(0),

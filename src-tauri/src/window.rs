@@ -137,15 +137,27 @@ pub fn spawn_position_saver(app: &AppHandle) {
 /// The window is declared hidden in tauri.conf.json so it never flashes at the
 /// centre of the screen before moving to where it belongs.
 #[tauri::command]
-pub fn show_pet_window(app: AppHandle) -> Result<(), String> {
+pub async fn show_pet_window(app: AppHandle) -> Result<(), String> {
     let Some(pet) = app.get_webview_window("pet") else {
         return Ok(());
     };
-    if let Some((x, y)) = read_position(&app) {
-        // Clamp against every monitor: a position saved on a display that is now
-        // unplugged must land back on-screen rather than being pulled to the primary.
-        let (x, y) = clamp_to(&pet, x, y, true);
-        let _ = pet.set_position(PhysicalPosition::new(x, y));
+
+    // The OS applies the window's creation geometry asynchronously, so anything set
+    // immediately after the window is built gets overwritten and the pet lands in the
+    // corner. Let that settle, then position, then reveal — no wrong-position flash.
+    std::thread::sleep(Duration::from_millis(300));
+
+    match read_position(&app) {
+        Some((x, y)) => {
+            // Clamp against every monitor: a position saved on a display that is now
+            // unplugged must land back on-screen, not be pulled to the primary.
+            let (x, y) = clamp_to(&pet, x, y, true);
+            let _ = pet.set_position(PhysicalPosition::new(x, y));
+        }
+        // First run (or a forgotten position): start centred.
+        None => {
+            let _ = center_on_work_area(&pet);
+        }
     }
     pet.show().map_err(|e| e.to_string())
 }
@@ -175,14 +187,25 @@ pub fn window_position(window: WebviewWindow) -> Result<(i32, i32), String> {
 
 #[tauri::command]
 pub fn window_center_here(window: WebviewWindow) -> Result<(), String> {
-    let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? else {
+    center_on_work_area(&window)
+}
+
+/// Centre the window on the work area (not the full monitor) of the display it is on.
+///
+/// The window config's `center: true` did not take effect — the pet kept landing at
+/// the bottom-left of the work area — so centring is done explicitly instead.
+fn center_on_work_area(window: &WebviewWindow) -> Result<(), String> {
+    let monitor = match window.current_monitor().map_err(|e| e.to_string())? {
+        Some(monitor) => Some(monitor),
+        None => window.primary_monitor().map_err(|e| e.to_string())?,
+    };
+    let Some(monitor) = monitor else {
         return Ok(());
     };
     let size = window.outer_size().map_err(|e| e.to_string())?;
-    let monitor_size = monitor.size();
-    let monitor_pos = monitor.position();
-    let x = monitor_pos.x + (monitor_size.width as i32 - size.width as i32) / 2;
-    let y = monitor_pos.y + (monitor_size.height as i32 - size.height as i32) / 2;
+    let area = monitor.work_area();
+    let x = area.position.x + (area.size.width as i32 - size.width as i32) / 2;
+    let y = area.position.y + (area.size.height as i32 - size.height as i32) / 2;
     window
         .set_position(PhysicalPosition::new(x, y))
         .map_err(|e| e.to_string())
@@ -330,15 +353,25 @@ pub fn quit_app(app: AppHandle) {
 }
 
 /// Open (or focus) the settings panel.
+///
+/// `async` is load-bearing: Tauri runs sync commands on the main thread, and building
+/// a webview window from there deadlocks — the outer frame appears but its webview
+/// never initialises, so the window stays blank white and the app stops responding
+/// (tray included). Async commands run on the runtime's thread pool instead, which
+/// leaves the main thread free to service the window creation.
 #[tauri::command]
-pub fn open_settings(app: AppHandle) -> Result<(), String> {
+pub async fn open_settings(app: AppHandle) -> Result<(), String> {
     if let Some(existing) = app.get_webview_window("settings") {
         let _ = existing.show();
         let _ = existing.set_focus();
         return Ok(());
     }
+    build_settings(&app)
+}
+
+fn build_settings(app: &AppHandle) -> Result<(), String> {
     tauri::WebviewWindowBuilder::new(
-        &app,
+        app,
         "settings",
         tauri::WebviewUrl::App("renderer/settings.html".into()),
     )
@@ -347,30 +380,30 @@ pub fn open_settings(app: AppHandle) -> Result<(), String> {
     .min_inner_size(720.0, 520.0)
     .center()
     .build()
-    .map_err(|e| e.to_string())?;
-    Ok(())
+    .map(|_| ())
+    .map_err(|e| e.to_string())
 }
 
 /// Open (or focus) the standalone chat window.
 #[tauri::command]
-pub fn open_chat(app: AppHandle) -> Result<(), String> {
+pub async fn open_chat(app: AppHandle) -> Result<(), String> {
     if let Some(existing) = app.get_webview_window("chat") {
         let _ = existing.show();
         let _ = existing.set_focus();
         return Ok(());
     }
-    tauri::WebviewWindowBuilder::new(
-        &app,
-        "chat",
-        tauri::WebviewUrl::App("renderer/chat.html".into()),
-    )
-    .title("Prismoo")
-    .inner_size(900.0, 720.0)
-    .min_inner_size(720.0, 560.0)
-    .center()
-    .build()
-    .map_err(|e| e.to_string())?;
-    Ok(())
+    build_chat(&app)
+}
+
+fn build_chat(app: &AppHandle) -> Result<(), String> {
+    tauri::WebviewWindowBuilder::new(app, "chat", tauri::WebviewUrl::App("renderer/chat.html".into()))
+        .title("Prismoo")
+        .inner_size(900.0, 720.0)
+        .min_inner_size(720.0, 560.0)
+        .center()
+        .build()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -404,6 +437,33 @@ pub fn autolaunch_set(app: AppHandle, enabled: bool) -> bool {
 #[tauri::command]
 pub fn app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
+}
+
+/// Diagnostic: what Tauri thinks the monitors and the pet window look like.
+#[tauri::command]
+pub fn debug_monitors(window: WebviewWindow) -> Value {
+    let monitors: Vec<Value> = window
+        .available_monitors()
+        .unwrap_or_default()
+        .iter()
+        .map(|m| {
+            let area = m.work_area();
+            serde_json::json!({
+                "pos": [m.position().x, m.position().y],
+                "size": [m.size().width, m.size().height],
+                "work": [area.position.x, area.position.y, area.size.width, area.size.height],
+                "scale": m.scale_factor(),
+            })
+        })
+        .collect();
+    let position = window.outer_position().ok();
+    let size = window.outer_size().ok();
+    serde_json::json!({
+        "monitors": monitors,
+        "windowPos": position.map(|p| [p.x, p.y]),
+        "windowSize": size.map(|s| [s.width, s.height]),
+        "windowScale": window.scale_factor().ok(),
+    })
 }
 
 /// Open the GitHub Releases page — the manual stand-in until the updater is ported.

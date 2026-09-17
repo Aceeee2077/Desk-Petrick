@@ -266,15 +266,14 @@
 
   window.api = api;
 
-  // The pet window starts click-through, matching the Electron build (transparent
-  // areas never swallow desktop clicks). The re-entry poll above brings interaction
-  // back as soon as the cursor touches the pet — it waits for app.js to publish
-  // __prismooHitTest, so running before the renderer is safe.
-  if (location.pathname.endsWith('index.html')) {
+  // Identify the pet window by its canvas rather than by the URL: the asset protocol
+  // does not necessarily keep "index.html" in location.pathname, and this is also the
+  // window that must start click-through (transparent areas never swallow desktop
+  // clicks) and ask Rust to reveal it at its remembered position.
+  // The re-entry poll above waits for app.js to publish __prismooHitTest, so running
+  // before the renderer is safe.
+  if (document.getElementById('pet-canvas')) {
     setClickThrough(true);
-    // The window is declared hidden so it never flashes at the centre of the screen
-    // before moving to its remembered position; Rust restores that position and
-    // then reveals it.
     send('show_pet_window');
   }
 })();

@@ -66,6 +66,17 @@ const SELF_CHECK_JS: &str = r#"
     const cursor = await window.__TAURI__.core.invoke('cursor_in_window');
     out.cursorInWindow = Array.isArray(cursor) ? 'inside' : 'outside';
     out.windowPosition = await window.__TAURI__.core.invoke('window_position');
+    out.monitors = await window.__TAURI__.core.invoke('debug_monitors');
+
+    // Regression guard: open Settings over the real UI path (renderer -> IPC ->
+    // open_settings). Building a window from a sync command deadlocked the whole app
+    // here — the window appeared blank white and neither it nor the tray responded.
+    // If that returns, this probe never finishes and the self-check times out.
+    const openedAt = performance.now();
+    window.api.openSettings();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    out.ipcOpenSettingsMs = Math.round(performance.now() - openedAt);
+    out.ipcStillResponsive = true;
   } catch (err) {
     out.apiError = String(err);
   }
@@ -248,12 +259,14 @@ fn spawn_self_check(app: &AppHandle) {
     std::thread::spawn(move || {
         let open_window = |label: &'static str| {
             let opener = handle.clone();
-            let _ = handle.run_on_main_thread(move || match label {
-                "chat" => {
-                    let _ = window::open_chat(opener);
-                }
-                _ => {
-                    let _ = window::open_settings(opener);
+            tauri::async_runtime::spawn(async move {
+                match label {
+                    "chat" => {
+                        let _ = window::open_chat(opener).await;
+                    }
+                    _ => {
+                        let _ = window::open_settings(opener).await;
+                    }
                 }
             });
         };
@@ -383,6 +396,7 @@ pub fn run() {
             window::autolaunch_get,
             window::autolaunch_set,
             window::app_version,
+            window::debug_monitors,
             window::open_releases,
             window::show_pet_window,
         ])
