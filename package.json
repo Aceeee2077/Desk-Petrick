@@ -15,6 +15,7 @@
     "tauri:build:release": "cargo build --release --manifest-path src-tauri/Cargo.toml",
     "tauri:check": "npm run tauri:build && node scripts/run-tauri-check.mjs",
     "typecheck": "tsc --noEmit",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml --lib",
     "set-custom": "node scripts/set-custom.mjs",
     "verify-comments": "node scripts/verify-comments.mjs",
     "dist": "tauri build",

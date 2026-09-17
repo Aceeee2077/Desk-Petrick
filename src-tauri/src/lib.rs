@@ -65,6 +65,7 @@ const SELF_CHECK_JS: &str = r#"
     out.hitTestCorner = window.__prismooHitTest ? window.__prismooHitTest(5, 5) : null;
     const cursor = await window.__TAURI__.core.invoke('cursor_in_window');
     out.cursorInWindow = Array.isArray(cursor) ? 'inside' : 'outside';
+    out.windowPosition = await window.__TAURI__.core.invoke('window_position');
   } catch (err) {
     out.apiError = String(err);
   }
@@ -326,6 +327,20 @@ pub fn run() {
             app.manage(weather::WeatherState::default());
             app.manage(window::DragState::default());
             tray::build(app.handle())?;
+            window::spawn_position_saver(app.handle());
+
+            // Safety net: the pet window starts hidden and is revealed by
+            // show_pet_window once the renderer is up. If that never happens (boot
+            // failure), show it anyway so the app is never just a tray icon.
+            let watchdog = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(4000));
+                if let Some(pet) = watchdog.get_webview_window("pet") {
+                    if !pet.is_visible().unwrap_or(true) {
+                        let _ = pet.show();
+                    }
+                }
+            });
 
             if std::env::var("PRISMOO_SELFCHECK").is_ok() {
                 spawn_self_check(app.handle());
@@ -369,6 +384,7 @@ pub fn run() {
             window::autolaunch_set,
             window::app_version,
             window::open_releases,
+            window::show_pet_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Prismoo");

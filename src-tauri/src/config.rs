@@ -86,6 +86,26 @@ fn deep_merge(base: &mut Value, patch: &Value) {
     }
 }
 
+/// Recursively copy in keys the stored config does not have yet.
+///
+/// This must NOT be `deep_merge`: merging the defaults with the overwrite semantics
+/// used for patches resets every stored value back to its default on startup — which
+/// is exactly what happened before (the chosen pet, theme, size and so on were lost
+/// on every relaunch).
+fn fill_missing(base: &mut Value, defaults: &Value) {
+    let (Value::Object(base_map), Value::Object(default_map)) = (base, defaults) else {
+        return;
+    };
+    for (key, default_value) in default_map {
+        match base_map.get_mut(key) {
+            Some(existing) => fill_missing(existing, default_value),
+            None => {
+                base_map.insert(key.clone(), default_value.clone());
+            }
+        }
+    }
+}
+
 pub fn init(app: &AppHandle) -> ConfigState {
     let dir = app
         .path()
@@ -99,7 +119,7 @@ pub fn init(app: &AppHandle) -> ConfigState {
         .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
         .unwrap_or_else(|| Value::Object(Map::new()));
     // Fill in anything the persisted file is missing (new keys, first run).
-    deep_merge(&mut value, &defaults());
+    fill_missing(&mut value, &defaults());
     seed_provider_from_legacy(&mut value);
 
     ConfigState {
@@ -202,5 +222,37 @@ impl ConfigState {
         if let Ok(raw) = serde_json::to_string_pretty(&value) {
             let _ = fs::write(&self.path, raw);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Regression: merging the defaults into a stored config must not reset the
+    /// values the user already chose (that bug wiped every setting on relaunch).
+    #[test]
+    fn defaults_fill_gaps_without_overwriting() {
+        let mut stored = json!({ "skin": "bulu", "petScale": 1.25, "theme": "dark" });
+        fill_missing(&mut stored, &defaults());
+
+        assert_eq!(stored.get("skin").and_then(|v| v.as_str()), Some("bulu"));
+        assert_eq!(stored.get("petScale").and_then(|v| v.as_f64()), Some(1.25));
+        assert_eq!(stored.get("theme").and_then(|v| v.as_str()), Some("dark"));
+        // …while keys the file does not have yet still get their default.
+        assert_eq!(
+            stored.get("chatMaxTokens").and_then(|v| v.as_i64()),
+            Some(120)
+        );
+    }
+
+    /// Patches (config_set) keep the overwrite semantics.
+    #[test]
+    fn deep_merge_overwrites_for_patches() {
+        let mut stored = json!({ "skin": "bulu", "focusInterval": 40 });
+        deep_merge(&mut stored, &json!({ "skin": "cat" }));
+        assert_eq!(stored.get("skin").and_then(|v| v.as_str()), Some("cat"));
+        assert_eq!(stored.get("focusInterval").and_then(|v| v.as_i64()), Some(40));
     }
 }

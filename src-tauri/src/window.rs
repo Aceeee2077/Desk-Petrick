@@ -9,7 +9,10 @@
 
 use crate::config::ConfigState;
 use serde_json::Value;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewWindow};
 
 /// Anchor captured when a drag starts, so the window tracks the cursor delta
@@ -39,50 +42,112 @@ fn config_bool(window: &WebviewWindow, key: &str, fallback: bool) -> bool {
 /// taskbar is respected); with "cross monitors" enabled it becomes the bounding box
 /// of every monitor instead.
 fn clamp_to_monitor(window: &WebviewWindow, x: i32, y: i32) -> (i32, i32) {
+    let stay_on_one = config_bool(window, "stayOnOneDisplay", true);
+    clamp_to(window, x, y, !stay_on_one)
+}
+
+/// Bounding rectangle the pet must stay inside: either its current monitor's work
+/// area, or the union of every monitor's work area.
+fn bounds(window: &WebviewWindow, all_monitors: bool) -> Option<(i32, i32, i32, i32)> {
+    if !all_monitors {
+        let monitor = window.current_monitor().ok().flatten()?;
+        let area = monitor.work_area();
+        return Some((
+            area.position.x,
+            area.position.y,
+            area.size.width as i32,
+            area.size.height as i32,
+        ));
+    }
+
+    let monitors = window.available_monitors().ok()?;
+    if monitors.is_empty() {
+        return None;
+    }
+    let (mut min_x, mut min_y, mut max_x, mut max_y) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+    for monitor in monitors {
+        let area = monitor.work_area();
+        min_x = min_x.min(area.position.x);
+        min_y = min_y.min(area.position.y);
+        max_x = max_x.max(area.position.x + area.size.width as i32);
+        max_y = max_y.max(area.position.y + area.size.height as i32);
+    }
+    Some((min_x, min_y, max_x - min_x, max_y - min_y))
+}
+
+fn clamp_to(window: &WebviewWindow, x: i32, y: i32, all_monitors: bool) -> (i32, i32) {
     let Ok(size) = window.outer_size() else {
         return (x, y);
     };
-
-    let stay_on_one = config_bool(window, "stayOnOneDisplay", true);
-    let bounds = if stay_on_one {
-        match window.current_monitor() {
-            Ok(Some(monitor)) => {
-                let area = monitor.work_area();
-                Some((
-                    area.position.x,
-                    area.position.y,
-                    area.size.width as i32,
-                    area.size.height as i32,
-                ))
-            }
-            _ => None,
-        }
-    } else {
-        match window.available_monitors() {
-            Ok(monitors) if !monitors.is_empty() => {
-                let mut min_x = i32::MAX;
-                let mut min_y = i32::MAX;
-                let mut max_x = i32::MIN;
-                let mut max_y = i32::MIN;
-                for monitor in monitors {
-                    let area = monitor.work_area();
-                    min_x = min_x.min(area.position.x);
-                    min_y = min_y.min(area.position.y);
-                    max_x = max_x.max(area.position.x + area.size.width as i32);
-                    max_y = max_y.max(area.position.y + area.size.height as i32);
-                }
-                Some((min_x, min_y, max_x - min_x, max_y - min_y))
-            }
-            _ => None,
-        }
-    };
-
-    let Some((bx, by, bw, bh)) = bounds else {
+    let Some((bx, by, bw, bh)) = bounds(window, all_monitors) else {
         return (x, y);
     };
     let max_x = (bx + bw - size.width as i32).max(bx);
     let max_y = (by + bh - size.height as i32).max(by);
     (x.clamp(bx, max_x), y.clamp(by, max_y))
+}
+
+// ---------- Position memory ----------
+
+fn position_path(app: &AppHandle) -> PathBuf {
+    app.path()
+        .app_config_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("position.json")
+}
+
+fn read_position(app: &AppHandle) -> Option<(i32, i32)> {
+    let raw = fs::read_to_string(position_path(app)).ok()?;
+    let value: Value = serde_json::from_str(&raw).ok()?;
+    Some((
+        value.get("x")?.as_i64()? as i32,
+        value.get("y")?.as_i64()? as i32,
+    ))
+}
+
+/// Poll the pet window's position and persist it when it changes.
+///
+/// Polling is deliberate: the window moves from drags, the auto-walk loop and the
+/// auto-jump parabola, and hooking every one of those would mean a file write per
+/// frame. A 1.5 s tick is far below anyone's patience and costs nothing.
+pub fn spawn_position_saver(app: &AppHandle) {
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let mut last: Option<(i32, i32)> = None;
+        loop {
+            std::thread::sleep(Duration::from_millis(1500));
+            let Some(pet) = handle.get_webview_window("pet") else {
+                continue;
+            };
+            let Ok(position) = pet.outer_position() else {
+                continue;
+            };
+            let current = (position.x, position.y);
+            if last != Some(current) {
+                last = Some(current);
+                let payload = serde_json::json!({ "x": current.0, "y": current.1 }).to_string();
+                let _ = fs::write(position_path(&handle), payload);
+            }
+        }
+    });
+}
+
+/// Restore the remembered position, then reveal the pet window.
+///
+/// The window is declared hidden in tauri.conf.json so it never flashes at the
+/// centre of the screen before moving to where it belongs.
+#[tauri::command]
+pub fn show_pet_window(app: AppHandle) -> Result<(), String> {
+    let Some(pet) = app.get_webview_window("pet") else {
+        return Ok(());
+    };
+    if let Some((x, y)) = read_position(&app) {
+        // Clamp against every monitor: a position saved on a display that is now
+        // unplugged must land back on-screen rather than being pulled to the primary.
+        let (x, y) = clamp_to(&pet, x, y, true);
+        let _ = pet.set_position(PhysicalPosition::new(x, y));
+    }
+    pet.show().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

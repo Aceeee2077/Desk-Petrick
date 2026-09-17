@@ -122,6 +122,7 @@ A pixel kitten will appear at the center of your screen. Try dragging it, clicki
 | `npm run tauri:build` | Compile the Tauri debug build (`src-tauri/target/debug/prismoo.exe`) |
 | `npm run tauri:build:release` | Compile the Tauri release build (no console window) |
 | `npm run tauri:check` | Compile and run the three-phase self-check (pet render / settings read-write / chat CRUD); exit code 0 = pass |
+| `npm test` | Run the Rust unit tests (config merging, default back-filling, …) |
 | `npx tauri build` | Package the installer (NSIS on Windows) into `src-tauri/target/release/bundle/` |
 | `npm run sprites` | Regenerate the pixel sprites and icons only (`scripts/generate-sprites.mjs`) |
 | `npm run brand-icons` | Regenerate the brand icons (`icon.png` / `ico` / `icns` / `tray.png`) |

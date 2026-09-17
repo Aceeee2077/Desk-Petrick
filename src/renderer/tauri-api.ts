@@ -272,5 +272,9 @@
   // __prismooHitTest, so running before the renderer is safe.
   if (location.pathname.endsWith('index.html')) {
     setClickThrough(true);
+    // The window is declared hidden so it never flashes at the centre of the screen
+    // before moving to its remembered position; Rust restores that position and
+    // then reveals it.
+    send('show_pet_window');
   }
 })();

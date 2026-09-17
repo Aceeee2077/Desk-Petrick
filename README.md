@@ -122,6 +122,7 @@ npm run tauri:build
 | `npm run tauri:build` | 编译 Tauri 调试版（`src-tauri/target/debug/prismoo.exe`） |
 | `npm run tauri:build:release` | 编译 Tauri 发布版（无控制台窗口） |
 | `npm run tauri:check` | 编译并运行三阶段自检：宠物窗口渲染 / 设置读写 / 聊天会话增删改查，退出码 0=通过 |
+| `npm test` | 运行 Rust 侧单元测试（配置文件合并、补全默认值等） |
 | `npx tauri build` | 打包安装包（Windows 为 NSIS），输出到 `src-tauri/target/release/bundle/` |
 | `npm run sprites` | 仅重新生成像素精灵图与图标（`scripts/generate-sprites.mjs`） |
 | `npm run brand-icons` | 重新生成品牌图标（`icon.png` / `ico` / `icns` / `tray.png`） |
