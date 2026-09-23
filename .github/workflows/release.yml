@@ -34,6 +34,27 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      # Verify the signing key + password in seconds instead of waiting for a full
+      # build. A bad/missing secret is surfaced as an annotation with the reason.
+      - name: Verify signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set +e
+          echo "preflight" > "$RUNNER_TEMP/preflight.txt"
+          out=$(npm exec tauri signer sign "$RUNNER_TEMP/preflight.txt" </dev/null 2>&1)
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            echo "$out"
+            echo "$out" | tail -n 5 | while IFS= read -r line; do
+              echo "::error::signing key check: $line"
+            done
+            exit 1
+          fi
+          echo "Signing key is valid."
+
       # tauri-action reads version/identifier from src-tauri/tauri.conf.json and
       # builds the frontend via beforeBuildCommand, so no separate npm build here.
       # It signs the installer and publishes latest.json + .sig automatically
