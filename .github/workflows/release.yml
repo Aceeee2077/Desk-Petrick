@@ -42,6 +42,16 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::secret TAURI_SIGNING_PRIVATE_KEY is empty or not set"
+            exit 1
+          fi
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+            echo "::error::secret TAURI_SIGNING_PRIVATE_KEY_PASSWORD is empty or not set"
+            exit 1
+          fi
+          echo "::notice::private key secret length: ${#TAURI_SIGNING_PRIVATE_KEY} (the key file is 348)"
+          echo "::notice::password secret length: ${#TAURI_SIGNING_PRIVATE_KEY_PASSWORD}"
           set +e
           echo "preflight" > "$RUNNER_TEMP/preflight.txt"
           out=$(npm exec tauri signer sign "$RUNNER_TEMP/preflight.txt" </dev/null 2>&1)
