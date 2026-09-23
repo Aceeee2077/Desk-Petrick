@@ -103,11 +103,11 @@ A pixel kitten will appear at the center of your screen. Try dragging it, clicki
 >
 > ```powershell
 > # Option A: use the .cmd variant (no settings changes needed)
-> npm.cmd run dev
+> npm.cmd run build
 >
 > # Option B: allow script execution for the current user (recommended, one-time)
 > Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-> npm run dev
+> npm run build
 > ```
 >
 > 💡 **Slow or timing-out crates.io downloads**
@@ -145,7 +145,7 @@ npx tauri build     # package the current platform
 Artifacts land in `src-tauri/target/release/bundle/`:
 
 ```
-src-tauri/target/release/bundle/nsis/Prismoo_0.5.0_x64-setup.exe
+src-tauri/target/release/bundle/nsis/Prismoo_0.5.1_x64-setup.exe
 ```
 
 For reference: the installer is about **2.05 MB** and the executable about **4.84 MB**

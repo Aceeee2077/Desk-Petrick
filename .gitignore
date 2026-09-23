@@ -30,6 +30,8 @@ coverage/
 *.p12
 *.pfx
 *.key
+# Stray signing-key folder generated when `~` was not expanded by the shell.
+/~
 
 # Local Petric data and private release notes
 .petric-data/

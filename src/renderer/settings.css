@@ -271,7 +271,7 @@ h2 {
   font-size: 13px;
 }
 
-.row > label {
+.row > label:not(.switch) {
   min-width: 96px;
   color: var(--text-soft);
   white-space: nowrap;

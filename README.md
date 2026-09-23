@@ -103,11 +103,11 @@ npm run tauri:build
 >
 > ```powershell
 > # 方式 A：直接用 .cmd 版本（无需改任何设置）
-> npm.cmd run dev
+> npm.cmd run build
 >
 > # 方式 B：允许当前用户执行脚本（推荐，一次搞定）
 > Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-> npm run dev
+> npm run build
 > ```
 >
 > 💡 **crates.io 拉取慢或超时**
@@ -145,7 +145,7 @@ npx tauri build     # 打包当前平台
 产物输出到 `src-tauri/target/release/bundle/`：
 
 ```
-src-tauri/target/release/bundle/nsis/Prismoo_0.5.0_x64-setup.exe
+src-tauri/target/release/bundle/nsis/Prismoo_0.5.1_x64-setup.exe
 ```
 
 体积参考：安装包约 **2.05 MB**，可执行文件约 **4.84 MB**（迁移前的 Electron 版分别是 140 MB / 188 MB）。

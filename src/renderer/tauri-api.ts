@@ -165,27 +165,6 @@
     else stopReentryPoll();
   }
 
-  // ---------- Not ported yet (graceful defaults) ----------
-  const RELEASES_URL = 'https://github.com/Aceeee2077/Desk-Petrick/releases/latest';
-
-  // The updater plugin is not wired up yet, so the update panel reports the running
-  // version and points at the Releases page instead of pretending a check happened.
-  let cachedVersion = '';
-  const appVersion = async (): Promise<string> => {
-    if (!cachedVersion) {
-      cachedVersion = await call<string>('app_version').catch(() => '');
-    }
-    return cachedVersion;
-  };
-  const updateUnsupportedState = async (): Promise<UpdateState> => ({
-    status: 'unsupported',
-    currentVersion: await appVersion(),
-    autoCheck: false,
-    autoDownload: false,
-    channel: 'stable',
-    manualUrl: RELEASES_URL,
-  });
-
   const api: PetApi = {
     // ---- Window ----
     moveWindow: (dx, dy) => send('window_move', { dx: Math.round(dx), dy: Math.round(dy) }),
@@ -222,12 +201,12 @@
     autoLaunchGet: () => call<boolean>('autolaunch_get'),
     autoLaunchSet: (enabled) => call<boolean>('autolaunch_set', { enabled }),
 
-    // ---- Updates (tauri-plugin-updater lands in a later step) ----
-    updateGetState: () => updateUnsupportedState(),
-    updateCheck: () => updateUnsupportedState(),
-    updateDownload: () => updateUnsupportedState(),
-    updateInstall: () => Promise.resolve(),
-    updateInstallWhenReady: () => updateUnsupportedState(),
+    // ---- Updates (tauri-plugin-updater, driven by the Rust commands in updater.rs) ----
+    updateGetState: () => call<UpdateState>('update_get_state'),
+    updateCheck: () => call<UpdateState>('update_check'),
+    updateDownload: () => call<UpdateState>('update_download'),
+    updateInstall: () => call<void>('update_install'),
+    updateInstallWhenReady: () => call<UpdateState>('update_install_when_ready'),
     updateOpenPage: () => call<void>('open_releases'),
     onUpdateState: (cb) => subscribe<UpdateState>('update-state', cb),
 

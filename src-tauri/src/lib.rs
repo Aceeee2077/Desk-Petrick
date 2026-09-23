@@ -15,6 +15,7 @@ mod config;
 mod custom;
 mod i18n;
 mod tray;
+mod updater;
 mod weather;
 mod window;
 
@@ -332,6 +333,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--autostart"]),
         ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let config = config::init(app.handle());
             app.manage(config);
@@ -339,6 +341,7 @@ pub fn run() {
             app.manage(chats);
             app.manage(weather::WeatherState::default());
             app.manage(window::DragState::default());
+            app.manage(updater::DownloadedState::default());
             tray::build(app.handle())?;
             window::spawn_position_saver(app.handle());
 
@@ -399,6 +402,11 @@ pub fn run() {
             window::debug_monitors,
             window::open_releases,
             window::show_pet_window,
+            updater::update_get_state,
+            updater::update_check,
+            updater::update_download,
+            updater::update_install,
+            updater::update_install_when_ready,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Prismoo");
